@@ -557,6 +557,16 @@
           </div>
         </div>
 
+        <div id="live-progress-banner" style="display: none; margin-bottom: 16px; background: var(--bg-elevated); border: 1px solid var(--accent-blue); padding: 12px 16px; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="spinner" style="border-top-color: var(--accent-blue);"></span>
+              <strong id="progress-stage" style="color: var(--text-main); font-size: 13px;">Stage 1/5: Drafter writing scene prose...</strong>
+            </div>
+            <div id="progress-time" style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-blue);">00:00</div>
+          </div>
+        </div>
+
         <div class="grid-3" style="margin-bottom: 16px;">
           <div class="stat-box">
             <div class="stat-label">Human Score (Heuristic)</div>
@@ -933,11 +943,38 @@
       document.getElementById('diff-viewer').innerText = data.diff || 'No diff tracked.';
     }
 
+    let draftPollTimer = null;
+
     async function runDraftLoop() {
       const chNum = parseInt(document.getElementById('workbench-chapter-select').value);
       const btn = document.getElementById('btn-run-loop');
+      const banner = document.getElementById('live-progress-banner');
+      const stageText = document.getElementById('progress-stage');
+      const timeText = document.getElementById('progress-time');
+
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> Drafting & Humanizing...';
+      banner.style.display = 'block';
+      stageText.innerText = `Starting loop for Chapter ${chNum}...`;
+      timeText.innerText = '00:00';
+
+      // Start live polling of pipeline progress
+      if (draftPollTimer) clearInterval(draftPollTimer);
+      draftPollTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/api/draft/status');
+          if (!res.ok) return;
+          const status = await res.json();
+          if (status.running) {
+            stageText.innerText = status.details || `Processing Chapter ${status.chapter}...`;
+            const mins = Math.floor(status.elapsed_seconds / 60).toString().padStart(2, '0');
+            const secs = (status.elapsed_seconds % 60).toString().padStart(2, '0');
+            timeText.innerText = `${mins}:${secs}`;
+          }
+        } catch (e) {
+          // silently continue polling
+        }
+      }, 800);
 
       try {
         const res = await fetch('/api/draft', {
@@ -952,6 +989,11 @@
       } catch (err) {
         alert('Draft loop error: ' + err);
       } finally {
+        if (draftPollTimer) {
+          clearInterval(draftPollTimer);
+          draftPollTimer = null;
+        }
+        banner.style.display = 'none';
         btn.disabled = false;
         btn.innerText = 'Run Multi-Agent Loop';
       }

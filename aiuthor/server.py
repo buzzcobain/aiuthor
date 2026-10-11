@@ -257,15 +257,43 @@ async def get_chapter_detail(chapter_num: int, dir: Optional[str] = None):
     }
 
 
+@app.get("/api/draft/status")
+async def get_draft_status():
+    if ACTIVE_JOB["running"] and ACTIVE_JOB["started_at"]:
+        ACTIVE_JOB["elapsed_seconds"] = int(time.time() - ACTIVE_JOB["started_at"])
+    return ACTIVE_JOB
+
+
 @app.post("/api/draft")
 async def draft_chapter_endpoint(req: DraftRequest):
     project = get_project(req.directory)
     if not project.has_outline():
         raise HTTPException(status_code=400, detail="Master outline missing. Call /api/outline first.")
 
+    ACTIVE_JOB["running"] = True
+    ACTIVE_JOB["chapter"] = req.chapter
+    ACTIVE_JOB["stage"] = "starting"
+    ACTIVE_JOB["details"] = f"Initializing pipeline for Chapter {req.chapter}..."
+    ACTIVE_JOB["started_at"] = time.time()
+    ACTIVE_JOB["error"] = None
+
+    def on_prog(stage: str, details: str):
+        ACTIVE_JOB["stage"] = stage
+        ACTIVE_JOB["details"] = details
+        ACTIVE_JOB["elapsed_seconds"] = int(time.time() - ACTIVE_JOB["started_at"])
+
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, project.run_chapter_loop, req.chapter)
-    return result
+    try:
+        result = await loop.run_in_executor(None, project.run_chapter_loop, req.chapter, on_prog)
+        ACTIVE_JOB["running"] = False
+        ACTIVE_JOB["stage"] = "idle"
+        ACTIVE_JOB["details"] = f"Chapter {req.chapter} complete."
+        return result
+    except Exception as e:
+        ACTIVE_JOB["running"] = False
+        ACTIVE_JOB["stage"] = "error"
+        ACTIVE_JOB["error"] = str(e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/lint")
