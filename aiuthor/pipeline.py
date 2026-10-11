@@ -145,7 +145,7 @@ class BookProject:
         self.vcs.commit("feat(architecture): generated world bible and master outline")
         return compiled
 
-    def run_chapter_loop(self, chapter_num: int) -> Dict[str, Any]:
+    def run_chapter_loop(self, chapter_num: int, on_progress: Optional[Any] = None) -> Dict[str, Any]:
         """Step 3: Looping multi-agent workflow for a single chapter.
         
         Workflow:
@@ -163,6 +163,13 @@ class BookProject:
         if not chapter_info:
             raise ValueError(f"Chapter {chapter_num} not found in outline.")
 
+        def notify(stage: str, details: str):
+            if on_progress:
+                try:
+                    on_progress(stage, details)
+                except Exception:
+                    pass
+
         # Gather previous chapter context for continuity
         prev_context = ""
         if chapter_num > 1:
@@ -176,25 +183,30 @@ class BookProject:
         rewriter = RevisionAgent(self.client, self.config)
 
         # 1. Draft
+        notify("drafting", f"Stage 1/5: Drafter writing initial scene prose with {self.config.drafting_model}...")
         raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context)
         v1_file = self.drafts_v1_dir / f"chapter_{chapter_num:02d}_v1.md"
         v1_file.write_text(raw_draft)
         self.vcs.commit(f"draft(ch{chapter_num:02d}): initial raw generation")
 
         # 2. Heuristic Lint
+        notify("linting", "Stage 2/5: Heuristic Linter auditing burstiness cadence & AI cliché markers...")
         lint_v1 = analyze_prose(raw_draft)
 
         # 3. Critic Review
+        notify("critic", f"Stage 3/5: Critic ({self.config.critic_model}) auditing dialogue authenticity & subtext...")
         critique_text = critic.review(raw_draft, lint_v1, chapter_info)
         review_file = self.reviews_dir / f"chapter_{chapter_num:02d}_review.md"
         review_file.write_text(critique_text)
 
         # 4. Revision Loop (Humanizer pass)
+        notify("rewriting", f"Stage 4/5: Revision Agent ({self.config.rewriter_model}) rewriting prose & purging clichés...")
         revised_draft = rewriter.revise(raw_draft, critique_text, lint_v1, bible)
         final_file = self.chapters_dir / f"chapter_{chapter_num:02d}.md"
         final_file.write_text(revised_draft)
 
         # 5. Final Lint
+        notify("vcs", "Stage 5/5: Computing final heuristic scores & recording Git commit...")
         lint_v2 = analyze_prose(revised_draft)
 
         # 6. Commit final revision
@@ -203,6 +215,7 @@ class BookProject:
         )
 
         diff = self.vcs.get_diff(str(final_file.relative_to(self.project_dir)))
+        notify("complete", f"✓ Chapter {chapter_num} finalized and committed ({commit_hash}).")
 
         return {
             "chapter_number": chapter_num,

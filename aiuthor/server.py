@@ -6,6 +6,7 @@ Provides local HTTP endpoints and serves the visual workbench for long-form book
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import os
+import time
 import asyncio
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -18,6 +19,16 @@ from .heuristics import analyze_prose
 from .config import GENRE_SPECS, get_model_config
 
 app = FastAPI(title="Aiuthor Workbench", version="0.1.0")
+
+ACTIVE_JOB: Dict[str, Any] = {
+    "running": False,
+    "chapter": None,
+    "stage": "idle",
+    "details": "Ready",
+    "elapsed_seconds": 0,
+    "started_at": None,
+    "error": None
+}
 
 # Default book project workspace (can be overridden via env AIUTHOR_PROJECT_DIR)
 DEFAULT_WORKSPACE = Path(os.getenv("AIUTHOR_PROJECT_DIR", Path.cwd()))
