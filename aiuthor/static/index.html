@@ -549,11 +549,19 @@
             <h1 class="panel-title">Chapter Production Workbench</h1>
             <p class="panel-desc">Execute the Drafter &rarr; Anti-AI Linter &rarr; Critic &rarr; Revision multi-agent loop.</p>
           </div>
-          <div style="display: flex; gap: 10px;">
+          <div style="display: flex; gap: 8px;">
             <select id="workbench-chapter-select" onchange="loadChapterDetail(this.value)" style="width: 140px;">
               <option value="1">Chapter 1</option>
             </select>
             <button class="btn btn-primary" id="btn-run-loop" onclick="runDraftLoop()">Run Multi-Agent Loop</button>
+            <button class="btn" id="btn-copy-chapter" onclick="copyCurrentChapter()" title="Copy chapter prose to clipboard">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy Text
+            </button>
+            <button class="btn" id="btn-pdf-chapter" onclick="exportChapterPDF()" title="Download standard manuscript format publisher PDF">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              Publisher PDF
+            </button>
           </div>
         </div>
 
@@ -619,7 +627,17 @@
             <h1 class="panel-title">Full Manuscript Assembly</h1>
             <p class="panel-desc">Compile all finalized chapters into a single master document.</p>
           </div>
-          <button class="btn btn-primary" onclick="buildManuscript()">Build Manuscript.md</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" onclick="buildManuscript()">Build Manuscript.md</button>
+            <button class="btn" id="btn-copy-manuscript" onclick="copyFullManuscript()" title="Copy entire book to clipboard">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy Book
+            </button>
+            <button class="btn" id="btn-pdf-manuscript" onclick="exportManuscriptPDF()" title="Download publisher-ready Standard Manuscript Format PDF">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              Publisher PDF (Full Book)
+            </button>
+          </div>
         </div>
 
         <div class="card">
@@ -999,6 +1017,28 @@
       }
     }
 
+    async function copyCurrentChapter() {
+      const text = document.getElementById('wb-prose-view').innerText;
+      if (!text || text.includes('Select or draft a chapter to view')) {
+        alert('No drafted text available to copy.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        const btn = document.getElementById('btn-copy-chapter');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        setTimeout(() => { btn.innerHTML = originalText; }, 1800);
+      } catch (err) {
+        alert('Failed to copy text: ' + err);
+      }
+    }
+
+    function exportChapterPDF() {
+      const chNum = parseInt(document.getElementById('workbench-chapter-select').value);
+      window.location.href = `/api/chapters/${chNum}/pdf`;
+    }
+
     // Step 5: Manuscript
     async function loadManuscript() {
       const res = await fetch('/api/manuscript');
@@ -1011,6 +1051,27 @@
       const data = await res.json();
       loadManuscript();
       refreshStatus();
+    }
+
+    async function copyFullManuscript() {
+      const text = document.getElementById('manuscript-viewer').innerText;
+      if (!text || text.includes('Compile chapters to read')) {
+        alert('No compiled manuscript available to copy. Click "Build Manuscript.md" first.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        const btn = document.getElementById('btn-copy-manuscript');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Copied Book!';
+        setTimeout(() => { btn.innerHTML = originalText; }, 1800);
+      } catch (err) {
+        alert('Failed to copy manuscript: ' + err);
+      }
+    }
+
+    function exportManuscriptPDF() {
+      window.location.href = '/api/manuscript/pdf';
     }
 
     // Models View

@@ -9,7 +9,7 @@ import os
 import time
 import asyncio
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ from .pipeline import BookProject
 from .models import ModelManager
 from .heuristics import analyze_prose
 from .config import GENRE_SPECS, get_model_config
+from .pdf_exporter import generate_manuscript_pdf
 
 app = FastAPI(title="Aiuthor Workbench", version="0.1.0")
 
@@ -317,6 +318,93 @@ async def lint_endpoint(req: LintRequest):
 async def git_log_endpoint(dir: Optional[str] = None, limit: int = 20):
     project = get_project(dir)
     return project.vcs.get_history(limit=limit)
+
+
+@app.get("/api/chapters/{chapter_num}/pdf")
+async def export_chapter_pdf(chapter_num: int, dir: Optional[str] = None):
+    project = get_project(dir)
+    outline = project.load_outline()
+    spec = project.load_spec()
+    bible = project.load_bible()
+    
+    ch_info = next((c for c in outline if c.get("chapter_number") == chapter_num), None)
+    final_file = project.chapters_dir / f"chapter_{chapter_num:02d}.md"
+    v1_file = project.drafts_v1_dir / f"chapter_{chapter_num:02d}_v1.md"
+    
+    text = ""
+    if final_file.exists():
+        text = final_file.read_text()
+    elif v1_file.exists():
+        text = v1_file.read_text()
+    else:
+        raise HTTPException(status_code=404, detail=f"No drafted prose found for Chapter {chapter_num}.")
+
+    title = spec.get("title", "The Affliction of Loving You")
+    genre = spec.get("genre_display", "Commercial Fiction")
+    
+    chapters = [{
+        "chapter_number": chapter_num,
+        "title": ch_info.get("title") if ch_info else f"Chapter {chapter_num}",
+        "content": text
+    }]
+    
+    pdf_bytes = generate_manuscript_pdf(
+        title=title,
+        author_name="David Vance",
+        genre=genre,
+        chapters=chapters,
+        running_header=f"Vance / {title[:20].upper()} / CH {chapter_num}"
+    )
+    
+    filename = f"{title.lower().replace(' ', '_')}_ch{chapter_num:02d}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.get("/api/manuscript/pdf")
+async def export_manuscript_pdf(dir: Optional[str] = None):
+    project = get_project(dir)
+    spec = project.load_spec()
+    outline = project.load_outline()
+    
+    # Gather all completed chapters
+    chapters = []
+    chapter_files = sorted(project.chapters_dir.glob("chapter_*.md"))
+    
+    if not chapter_files:
+        raise HTTPException(status_code=400, detail="No completed chapters found to export.")
+
+    for f in chapter_files:
+        try:
+            num = int(f.stem.replace("chapter_", ""))
+        except ValueError:
+            num = 1
+        ch_info = next((c for c in outline if c.get("chapter_number") == num), None)
+        chapters.append({
+            "chapter_number": num,
+            "title": ch_info.get("title") if ch_info else f"Chapter {num}",
+            "content": f.read_text()
+        })
+
+    title = spec.get("title", "The Affliction of Loving You")
+    genre = spec.get("genre_display", "Commercial Fiction")
+
+    pdf_bytes = generate_manuscript_pdf(
+        title=title,
+        author_name="David Vance",
+        genre=genre,
+        chapters=chapters
+    )
+
+    filename = f"{title.lower().replace(' ', '_')}_manuscript.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 @app.get("/api/manuscript")
