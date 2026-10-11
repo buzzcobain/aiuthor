@@ -105,6 +105,40 @@ def cmd_init(args):
     console.print("[dim]Next step: Run `book-foundry outline` to compile the World Bible and Master Outline.[/dim]")
 
 
+def cmd_ingest(args):
+    """Ingests a comprehensive novel specification and character bible markdown file."""
+    spec_path = Path(args.file)
+    if not spec_path.exists():
+        console.print(f"[red]Error:[/red] Specification file not found: {spec_path}")
+        sys.exit(1)
+
+    content = spec_path.read_text()
+    project_dir = Path(args.dir) if args.dir else Path.cwd()
+    project = BookProject(project_dir)
+
+    console.print(f"[bold]Ingesting Master Specification from:[/bold] {spec_path.name}")
+    parsed = project.ingest_master_spec(content)
+
+    spec = parsed["spec"]
+    bible = parsed["bible"]
+    outline = parsed["outline"]
+
+    table = Table(title=f"Master Specification Ingested • {spec.get('title')}", border_style="dim", show_lines=True)
+    table.add_column("Parameter", style="bold cyan")
+    table.add_column("Ingested Value")
+
+    table.add_row("Title", spec.get("title", ""))
+    table.add_row("Genre", spec.get("genre_display", ""))
+    table.add_row("Target Word Count", f"{spec.get('target_words', 0):,} words")
+    table.add_row("Decomposed Chapters", f"{len(outline)} chapters")
+    table.add_row("Character Dossiers", f"{len(bible.get('characters', []))} ({', '.join([c.get('name') for c in bible.get('characters', [])])})")
+    table.add_row("System Directives", f"{'✓ Active (' + str(len(bible.get('system_directives', ''))) + ' chars)' if bible.get('system_directives') else 'None'}")
+    table.add_row("Evidence Matrix", f"{len(bible.get('evidence_matrix_table', []))} table entries")
+
+    console.print(table)
+    console.print(f"[bold green]✓ Saved and committed to Git:[/bold green] {project.project_dir}")
+
+
 def cmd_outline(args):
     """Generates the World Bible and Chapter Outline using local LLM reasoning."""
     project = BookProject(Path(args.dir))
@@ -290,6 +324,12 @@ def main():
     # models
     p_models = subparsers.add_parser("models", help="Inspect active model assignments and central Model Manager status")
     p_models.set_defaults(func=cmd_models)
+
+    # ingest
+    p_ingest = subparsers.add_parser("ingest", help="Ingest a comprehensive novel specification and character bible markdown file")
+    p_ingest.add_argument("file", help="Path to specification markdown file")
+    p_ingest.add_argument("--dir", default=None, help="Target project directory")
+    p_ingest.set_defaults(func=cmd_ingest)
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize a project and run scoping")

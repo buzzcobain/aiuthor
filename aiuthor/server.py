@@ -51,7 +51,39 @@ class LintRequest(BaseModel):
     text: str
 
 
+class IngestSpecRequest(BaseModel):
+    content: str
+    directory: Optional[str] = None
+
+
 # --- API Routes ---
+
+@app.post("/api/spec/ingest")
+async def ingest_spec_endpoint(req: IngestSpecRequest):
+    project = get_project(req.directory)
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="Specification markdown cannot be empty.")
+    
+    parsed = project.ingest_master_spec(req.content)
+    return {
+        "status": "ingested",
+        "title": parsed["spec"].get("title"),
+        "genre_display": parsed["spec"].get("genre_display"),
+        "target_words": parsed["spec"].get("target_words"),
+        "target_chapters": parsed["spec"].get("target_chapters"),
+        "characters_count": len(parsed["bible"].get("characters", [])),
+        "characters": [c.get("name") for c in parsed["bible"].get("characters", [])],
+        "outline_count": len(parsed["outline"]),
+        "has_system_directives": bool(parsed["bible"].get("system_directives"))
+    }
+
+
+@app.get("/api/spec/sample")
+async def get_sample_spec_endpoint():
+    sample_path = Path("/Users/david/Downloads/novel_specification_character_bible-3.md")
+    if sample_path.exists():
+        return {"content": sample_path.read_text(), "filename": sample_path.name}
+    return {"content": "", "filename": ""}
 
 @app.get("/api/status")
 async def get_status(dir: Optional[str] = None):

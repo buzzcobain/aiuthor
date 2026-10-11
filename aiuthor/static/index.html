@@ -427,61 +427,85 @@
             <h1 class="panel-title">Scoping Studio & Deficit Audit</h1>
             <p class="panel-desc">Benchmark genre length quotas and resolve structural plot deficits before drafting.</p>
           </div>
-          <button class="btn btn-primary" onclick="initProject()">Run Scoping Analysis</button>
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button class="btn btn-primary" id="mode-btn-spec" onclick="setScopingMode('spec')">Master Novel Specification / Character Bible</button>
+          <button class="btn" id="mode-btn-quick" onclick="setScopingMode('quick')">Quick Premise Prompt</button>
         </div>
 
-        <div class="grid-2">
+        <!-- MODE 1: MASTER SPEC (Default) -->
+        <div id="mode-spec-container">
           <div class="card">
-            <div class="card-title">Book Premise & Target Audience</div>
-            <div class="field">
-              <label>Book Title</label>
-              <input type="text" id="init-title" value="Terminal Shift" placeholder="e.g. The Glass Archive">
-            </div>
-            <div class="field">
-              <label>Genre / Publishing Target</label>
-              <select id="init-genre">
-                <option value="">Auto-Detect from Premise</option>
-                <option value="thriller">Commercial Thriller / Mystery (~75,000 words)</option>
-                <option value="epic_fantasy">Epic / High Fantasy or Space Opera (~105,000 words)</option>
-                <option value="ya_fantasy">Young Adult Fantasy (~75,000 words)</option>
-                <option value="literary_fiction">Literary / Contemporary Fiction (~80,000 words)</option>
-                <option value="horror">Horror / Psychological Suspense (~72,000 words)</option>
-                <option value="romance">Romance (~65,000 words)</option>
-                <option value="nonfiction_business">Non-Fiction / Framework (~48,000 words)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Detailed Premise, Characters, and World Concept</label>
-              <textarea id="init-prompt" style="height: 160px;" placeholder="Describe your protagonist, setting constraints, initial conflict, and audience tone...">A cynical air-traffic controller at an orbital asteroid refinery discovers an incoming cargo ship with transponders wiped. He has six hours to decide whether to vent the docking bay. Commercial Sci-Fi Thriller.</textarea>
-            </div>
-          </div>
-
-          <div class="card" id="scoping-results-card">
-            <div class="card-title">Architectural Quotas & Mass Audit</div>
-            <div id="scoping-empty" style="color: var(--text-dim); padding: 40px 0; text-align: center;">
-              Submit your premise to calculate target length benchmarks and identify missing structural elements.
-            </div>
-            <div id="scoping-content" style="display: none;">
-              <div class="grid-3" style="margin-bottom: 16px;">
-                <div class="stat-box">
-                  <div class="stat-label">Target Word Count</div>
-                  <div class="stat-value" id="scope-target-words">75,000</div>
-                </div>
-                <div class="stat-box">
-                  <div class="stat-label">Target Chapters</div>
-                  <div class="stat-value" id="scope-chapters">35</div>
-                </div>
-                <div class="stat-box">
-                  <div class="stat-label">Words / Chapter</div>
-                  <div class="stat-value" id="scope-chapter-words">2,100</div>
-                </div>
+            <div class="card-title">
+              <span>Paste Comprehensive Novel Specification (.md)</span>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn" onclick="loadSampleSpec()">Load Attached Sample Bible</button>
+                <button class="btn btn-primary" id="btn-ingest-spec" onclick="ingestMasterSpec()">Ingest Specification & Build State</button>
               </div>
+            </div>
+            <div class="field">
+              <label>Specification Markdown Document (Executive Summary, 3-Act Structure, Character Dossiers, Evidence Matrix, System Directives)</label>
+              <textarea id="master-spec-input" style="height: 280px; font-family: var(--font-mono); font-size: 11px;" placeholder="Paste your markdown project specification here..."></textarea>
+            </div>
+            <div id="spec-ingest-status" style="margin-top: 8px; display: none;"></div>
+          </div>
+        </div>
 
-              <div class="card-title" style="font-size: 12px; margin-top: 16px;">Identified Context Deficits</div>
-              <div id="deficits-list"></div>
+        <!-- MODE 2: QUICK PROMPT -->
+        <div id="mode-quick-container" style="display: none;">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-title">Book Premise & Target Audience</div>
+              <div class="field">
+                <label>Book Title</label>
+                <input type="text" id="init-title" value="Terminal Shift" placeholder="e.g. The Glass Archive">
+              </div>
+              <div class="field">
+                <label>Genre / Publishing Target</label>
+                <select id="init-genre">
+                  <option value="">Auto-Detect from Premise</option>
+                  <option value="thriller">Commercial Thriller / Mystery (~75,000 words)</option>
+                  <option value="epic_fantasy">Epic / High Fantasy or Space Opera (~105,000 words)</option>
+                  <option value="ya_fantasy">Young Adult Fantasy (~75,000 words)</option>
+                  <option value="literary_fiction">Literary / Contemporary Fiction (~80,000 words)</option>
+                  <option value="horror">Horror / Psychological Suspense (~72,000 words)</option>
+                  <option value="romance">Romance (~65,000 words)</option>
+                  <option value="nonfiction_business">Non-Fiction / Framework (~48,000 words)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Detailed Premise, Characters, and World Concept</label>
+                <textarea id="init-prompt" style="height: 160px;" placeholder="Describe your protagonist, setting constraints, initial conflict, and audience tone...">A cynical air-traffic controller at an orbital asteroid refinery discovers an incoming cargo ship with transponders wiped. He has six hours to decide whether to vent the docking bay. Commercial Sci-Fi Thriller.</textarea>
+              </div>
+              <button class="btn btn-primary" onclick="initProject()">Run Scoping Analysis</button>
+            </div>
 
-              <div class="card-title" style="font-size: 12px; margin-top: 16px;">Clarifying Questions to Fill Target Length</div>
-              <div id="questions-list"></div>
+            <div class="card" id="scoping-results-card">
+              <div class="card-title">Architectural Quotas & Mass Audit</div>
+              <div id="scoping-empty" style="color: var(--text-dim); padding: 40px 0; text-align: center;">
+                Submit your premise to calculate target length benchmarks and identify missing structural elements.
+              </div>
+              <div id="scoping-content" style="display: none;">
+                <div class="grid-3" style="margin-bottom: 16px;">
+                  <div class="stat-box">
+                    <div class="stat-label">Target Word Count</div>
+                    <div class="stat-value" id="scope-target-words">75,000</div>
+                  </div>
+                  <div class="stat-box">
+                    <div class="stat-label">Target Chapters</div>
+                    <div class="stat-value" id="scope-chapters">35</div>
+                  </div>
+                  <div class="stat-box">
+                    <div class="stat-label">Words / Chapter</div>
+                    <div class="stat-value" id="scope-chapter-words">2,100</div>
+                  </div>
+                </div>
+
+                <div class="card-title" style="font-size: 12px; margin-top: 16px;">Identified Context Deficits</div>
+                <div id="deficits-list"></div>
+
+                <div class="card-title" style="font-size: 12px; margin-top: 16px;">Clarifying Questions to Fill Target Length</div>
+                <div id="questions-list"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -742,6 +766,79 @@
       });
 
       refreshStatus();
+    }
+
+    // Master Specification Ingestion
+    function setScopingMode(mode) {
+      if (mode === 'spec') {
+        document.getElementById('mode-spec-container').style.display = 'block';
+        document.getElementById('mode-quick-container').style.display = 'none';
+        document.getElementById('mode-btn-spec').className = 'btn btn-primary';
+        document.getElementById('mode-btn-quick').className = 'btn';
+      } else {
+        document.getElementById('mode-spec-container').style.display = 'none';
+        document.getElementById('mode-quick-container').style.display = 'block';
+        document.getElementById('mode-btn-spec').className = 'btn';
+        document.getElementById('mode-btn-quick').className = 'btn btn-primary';
+      }
+    }
+
+    async function loadSampleSpec() {
+      try {
+        const res = await fetch('/api/spec/sample');
+        const data = await res.json();
+        if (data.content) {
+          document.getElementById('master-spec-input').value = data.content;
+        } else {
+          alert('Sample file not found at /Users/david/Downloads/novel_specification_character_bible-3.md');
+        }
+      } catch (e) {
+        alert('Error loading sample: ' + e);
+      }
+    }
+
+    async function ingestMasterSpec() {
+      const content = document.getElementById('master-spec-input').value.trim();
+      if (!content) {
+        alert('Please paste a markdown specification document first.');
+        return;
+      }
+      const btn = document.getElementById('btn-ingest-spec');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Parsing & Decomposing...';
+
+      try {
+        const res = await fetch('/api/spec/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        const data = await res.json();
+
+        const statusDiv = document.getElementById('spec-ingest-status');
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-green); padding: 12px; border-radius: 3px;">
+            <strong style="color: var(--accent-green);">✓ Master Specification Successfully Ingested:</strong> ${data.title}<br>
+            <span style="color: var(--text-muted); font-size: 11px;">
+              Genre: ${data.genre_display} • Target: ${data.target_words.toLocaleString()} words • ${data.outline_count} Chapters decomposed • Characters: ${data.characters.join(', ')} • Operational Directives: Active
+            </span>
+          </div>
+        `;
+
+        await refreshStatus();
+        await loadOutline();
+        await loadChaptersList();
+
+        setTimeout(() => {
+          switchTab('architecture');
+        }, 1200);
+      } catch (err) {
+        alert('Failed to ingest spec: ' + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Ingest Specification & Build State';
+      }
     }
 
     // Step 2: Outline

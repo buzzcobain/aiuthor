@@ -105,6 +105,25 @@ class BookProject:
         self.save_spec(spec_data)
         return result
 
+    def ingest_master_spec(self, markdown_content: str) -> Dict[str, Any]:
+        """Ingests a comprehensive novel specification and character bible markdown document."""
+        from .spec_parser import SpecParser
+        parsed = SpecParser.parse_markdown_spec(markdown_content)
+
+        spec = parsed["spec"]
+        bible = parsed["bible"]
+        outline = parsed["outline"]
+
+        with open(self.spec_file, "w") as f:
+            yaml.safe_dump(spec, f, sort_keys=False)
+        with open(self.bible_file, "w") as f:
+            yaml.safe_dump(bible, f, sort_keys=False)
+        with open(self.outline_file, "w") as f:
+            yaml.safe_dump(outline, f, sort_keys=False)
+
+        self.vcs.commit(f"feat(spec): ingested master specification and bible for '{spec.get('title')}'")
+        return parsed
+
     def generate_bible_and_outline(self, clarifications: str = "") -> Dict[str, Any]:
         """Step 2: Uses reasoning model to generate world bible and master outline."""
         spec = self.load_spec()

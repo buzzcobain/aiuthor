@@ -198,6 +198,9 @@ class DraftingAgent:
             "- Make dialogue asymmetric: people interrupt, avoid questions, and speak in fragments rather than delivering complete thesis statements."
         )
 
+        if bible.get("system_directives"):
+            system_prompt += f"\n\nAUTHOR'S OPERATIONAL DIRECTIVES:\n{bible['system_directives']}"
+
         user_prompt = f"""
 CHAPTER TO WRITE:
 Chapter {chapter_info.get('chapter_number')}: {chapter_info.get('title')}
@@ -239,6 +242,10 @@ class CriticAgent:
             "on-the-nose dialogue, melodrama, flat sentence cadence, unearned emotional climaxes, and purple prose. "
             "Provide crisp, bulleted, actionable revision directives."
         )
+
+        author_rules = chapter_info.get("system_directives", "")
+        if author_rules:
+            system_prompt += f"\n\nAUTHOR'S OPERATIONAL CONSTRAINTS:\n{author_rules}"
 
         lint_summary = (
             f"Heuristic Lint Score: {lint_report.human_score}/100\n"
