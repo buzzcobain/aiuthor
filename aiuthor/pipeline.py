@@ -74,11 +74,21 @@ class BookProject:
         with open(self.bible_file, "r") as f:
             return yaml.safe_load(f) or {}
 
+    def save_bible(self, data: Dict[str, Any]):
+        with open(self.bible_file, "w") as f:
+            yaml.safe_dump(data, f, sort_keys=False)
+        self.vcs.commit("edit(bible): updated world rules and character dossiers")
+
     def load_outline(self) -> List[Dict[str, Any]]:
         if not self.outline_file.exists():
             return []
         with open(self.outline_file, "r") as f:
             return yaml.safe_load(f) or []
+
+    def save_outline(self, data: List[Dict[str, Any]]):
+        with open(self.outline_file, "w") as f:
+            yaml.safe_dump(data, f, sort_keys=False)
+        self.vcs.commit(f"edit(outline): updated beat sheet structure ({len(data)} chapters)")
 
     def initialize_from_prompt(self, title: str, prompt: str, override_genre: Optional[str] = None) -> ScopingResult:
         """Step 1: Analyzes raw prompt, determines length, and identifies deficits."""

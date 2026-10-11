@@ -68,7 +68,92 @@ class IngestSpecRequest(BaseModel):
     directory: Optional[str] = None
 
 
+class UpdateBookRequest(BaseModel):
+    title: Optional[str] = None
+    author_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    genre_display: Optional[str] = None
+    target_words: Optional[int] = None
+    tone_and_voice: Optional[str] = None
+    premise_summary: Optional[str] = None
+    system_directives: Optional[str] = None
+    world_rules: Optional[List[str]] = None
+    characters: Optional[List[Dict[str, Any]]] = None
+    directory: Optional[str] = None
+
+
 # --- API Routes ---
+
+@app.get("/api/book")
+async def get_book_details_endpoint(dir: Optional[str] = None):
+    project = get_project(dir)
+    spec = project.load_spec()
+    bible = project.load_bible()
+    outline = project.load_outline()
+    
+    return {
+        "title": spec.get("title", "Untitled Project"),
+        "author_name": spec.get("author_name", "David Vance"),
+        "contact_email": spec.get("contact_email", "contact@aiuthor.io"),
+        "genre_display": spec.get("genre_display", "Commercial Fiction"),
+        "genre_key": spec.get("genre_key", ""),
+        "target_words": spec.get("target_words", 80000),
+        "target_chapters": spec.get("target_chapters", len(outline) or 25),
+        "premise_summary": spec.get("premise_summary", ""),
+        "tone_and_voice": bible.get("tone_and_voice", ""),
+        "system_directives": bible.get("system_directives", ""),
+        "world_rules": bible.get("world_rules", []),
+        "characters": bible.get("characters", []),
+        "outline_count": len(outline),
+        "has_spec": project.has_spec(),
+        "has_outline": project.has_outline()
+    }
+
+
+@app.put("/api/book")
+async def update_book_details_endpoint(req: UpdateBookRequest):
+    project = get_project(req.directory)
+    spec = project.load_spec()
+    bible = project.load_bible()
+    
+    # Update spec fields
+    if req.title is not None:
+        spec["title"] = req.title.strip()
+        bible["title"] = req.title.strip()
+    if req.author_name is not None:
+        spec["author_name"] = req.author_name.strip()
+    if req.contact_email is not None:
+        spec["contact_email"] = req.contact_email.strip()
+    if req.genre_display is not None:
+        spec["genre_display"] = req.genre_display.strip()
+        bible["genre_display"] = req.genre_display.strip()
+    if req.target_words is not None:
+        spec["target_words"] = req.target_words
+    if req.premise_summary is not None:
+        spec["premise_summary"] = req.premise_summary.strip()
+        
+    # Update bible fields
+    if req.tone_and_voice is not None:
+        bible["tone_and_voice"] = req.tone_and_voice.strip()
+    if req.system_directives is not None:
+        bible["system_directives"] = req.system_directives.strip()
+    if req.world_rules is not None:
+        bible["world_rules"] = [r.strip() for r in req.world_rules if r.strip()]
+    if req.characters is not None:
+        bible["characters"] = req.characters
+
+    project.save_spec(spec)
+    project.save_bible(bible)
+    
+    return {
+        "status": "updated",
+        "title": spec.get("title"),
+        "author_name": spec.get("author_name"),
+        "genre_display": spec.get("genre_display"),
+        "target_words": spec.get("target_words"),
+        "characters_count": len(bible.get("characters", []))
+    }
+
 
 @app.post("/api/spec/ingest")
 async def ingest_spec_endpoint(req: IngestSpecRequest):

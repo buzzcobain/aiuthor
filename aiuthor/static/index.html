@@ -412,6 +412,7 @@
       <button class="nav-btn" onclick="switchTab('drafting')">3. Chapter Workbench</button>
       <button class="nav-btn" onclick="switchTab('diffs')">4. Revisions & Diffs</button>
       <button class="nav-btn" onclick="switchTab('manuscript')">5. Full Manuscript</button>
+      <button class="nav-btn" onclick="switchTab('book')">Book Details & Lore</button>
       
       <div class="nav-label" style="margin-top: 16px;">System & Engine</div>
       <button class="nav-btn" onclick="switchTab('models')">Model Manager & Roles</button>
@@ -644,6 +645,80 @@
           <div class="card-title">Compiled Manuscript Reader</div>
           <div id="manuscript-viewer" class="prose-editor">Compile chapters to read the full manuscript.</div>
         </div>
+      <!-- TAB: BOOK DETAILS & METADATA -->
+      <section id="tab-book" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Book Management & Metadata</h1>
+            <p class="panel-desc">Update manuscript title, author byline, target length, world rules, and author operational directives.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" onclick="loadBookDetails()">Reset</button>
+            <button class="btn btn-primary" id="btn-save-book" onclick="saveBookDetails()">Save Changes</button>
+          </div>
+        </div>
+
+        <div id="book-save-alert" style="display: none; margin-bottom: 16px; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-green); padding: 10px 14px; border-radius: 4px; color: var(--accent-green); font-size: 13px;">
+          ✓ Book details updated and committed to Git state.
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Commercial & Publisher Metadata</div>
+            <div class="field">
+              <label>Book Title</label>
+              <input type="text" id="bm-title" placeholder="e.g. The Affliction of Loving You">
+            </div>
+            <div class="grid-2" style="margin-bottom: 0;">
+              <div class="field">
+                <label>Author Byline</label>
+                <input type="text" id="bm-author" placeholder="David Vance">
+              </div>
+              <div class="field">
+                <label>Contact / Agency Email</label>
+                <input type="text" id="bm-email" placeholder="contact@aiuthor.io">
+              </div>
+            </div>
+            <div class="grid-2" style="margin-bottom: 0;">
+              <div class="field">
+                <label>Genre / Subgenre Description</label>
+                <input type="text" id="bm-genre" placeholder="e.g. Psychological Horror / Gothic Romance">
+              </div>
+              <div class="field">
+                <label>Target Word Count</label>
+                <input type="number" id="bm-target-words" placeholder="105000" step="5000">
+              </div>
+            </div>
+            <div class="field">
+              <label>Executive Premise & Pitch</label>
+              <textarea id="bm-premise" style="height: 110px;" placeholder="Core premise summary..."></textarea>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Tone, Style & World Rules</div>
+            <div class="field">
+              <label>Tone & Narrative Voice</label>
+              <input type="text" id="bm-tone" placeholder="Sophisticated, insidious, atmospheric, intellectually ruthless">
+            </div>
+            <div class="field">
+              <label>World Rules & Laws (One per line)</label>
+              <textarea id="bm-world-rules" style="height: 110px; font-family: var(--font-mono); font-size: 11px;" placeholder="Unbreakable world rules..."></textarea>
+            </div>
+            <div class="field">
+              <label>System Prompt & Operational Directives (Fed to Drafter & Critic)</label>
+              <textarea id="bm-directives" style="height: 135px; font-family: var(--font-mono); font-size: 11px;" placeholder="[SYSTEM DIRECTIVE: ...]"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Character Dossiers (YAML / JSON)</div>
+          <div class="field">
+            <label>Active Characters & Psychological Profiles</label>
+            <textarea id="bm-characters" style="height: 180px; font-family: var(--font-mono); font-size: 11px;" placeholder="[{ &quot;name&quot;: &quot;...&quot; }]"></textarea>
+          </div>
+        </div>
       </section>
 
       <!-- TAB 6: MODELS -->
@@ -716,12 +791,86 @@
       const targetPanel = document.getElementById('tab-' + tabId);
       if (targetPanel) targetPanel.classList.add('active');
 
+      if (tabId === 'book') loadBookDetails();
       if (tabId === 'architecture') loadOutline();
       if (tabId === 'drafting') loadChaptersList();
       if (tabId === 'diffs') loadChaptersList();
       if (tabId === 'manuscript') loadManuscript();
       if (tabId === 'models') loadModels();
       if (tabId === 'vcs') loadGitLog();
+    }
+
+    // Book Management Menu
+    async function loadBookDetails() {
+      try {
+        const res = await fetch('/api/book');
+        const data = await res.json();
+        
+        document.getElementById('bm-title').value = data.title || '';
+        document.getElementById('bm-author').value = data.author_name || '';
+        document.getElementById('bm-email').value = data.contact_email || '';
+        document.getElementById('bm-genre').value = data.genre_display || '';
+        document.getElementById('bm-target-words').value = data.target_words || 80000;
+        document.getElementById('bm-premise').value = data.premise_summary || '';
+        document.getElementById('bm-tone').value = data.tone_and_voice || '';
+        document.getElementById('bm-directives').value = data.system_directives || '';
+        document.getElementById('bm-world-rules').value = (data.world_rules || []).join('\n');
+        document.getElementById('bm-characters').value = JSON.stringify(data.characters || [], null, 2);
+      } catch (err) {
+        console.error('Failed to load book details:', err);
+      }
+    }
+
+    async function saveBookDetails() {
+      const btn = document.getElementById('btn-save-book');
+      const alertDiv = document.getElementById('book-save-alert');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+      let parsedChars = [];
+      try {
+        const rawChars = document.getElementById('bm-characters').value.trim();
+        if (rawChars) parsedChars = JSON.parse(rawChars);
+      } catch (e) {
+        alert('Invalid JSON in Character Dossiers. Please fix formatting before saving: ' + e);
+        btn.disabled = false;
+        btn.innerText = 'Save Changes';
+        return;
+      }
+
+      const payload = {
+        title: document.getElementById('bm-title').value,
+        author_name: document.getElementById('bm-author').value,
+        contact_email: document.getElementById('bm-email').value,
+        genre_display: document.getElementById('bm-genre').value,
+        target_words: parseInt(document.getElementById('bm-target-words').value) || 80000,
+        premise_summary: document.getElementById('bm-premise').value,
+        tone_and_voice: document.getElementById('bm-tone').value,
+        system_directives: document.getElementById('bm-directives').value,
+        world_rules: document.getElementById('bm-world-rules').value.split('\n').map(s => s.trim()).filter(Boolean),
+        characters: parsedChars
+      };
+
+      try {
+        const res = await fetch('/api/book', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        
+        alertDiv.style.display = 'block';
+        alertDiv.innerText = `✓ Updated "${result.title}" (${result.genre_display}, ${result.target_words.toLocaleString()} words). Saved to Git.`;
+        setTimeout(() => { alertDiv.style.display = 'none'; }, 4000);
+        
+        await refreshStatus();
+        await loadOutline();
+      } catch (err) {
+        alert('Failed to save book details: ' + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Save Changes';
+      }
     }
 
     // Polling System Status
