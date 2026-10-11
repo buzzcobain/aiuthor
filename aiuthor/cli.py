@@ -25,15 +25,19 @@ def cmd_models(args):
     """Inspects active model assignments from environment variables and checks Model Manager status."""
     manager = ModelManager()
     roles = manager.validate_roles()
+    is_live = manager.is_manager_running()
 
-    table = Table(title="Aiuthor • Active Model Configuration (Env Vars)", border_style="dim", show_lines=True)
+    server_status = f"[green]✓ Connected & Serving (Live: {manager.model_manager_url})[/green]" if is_live else f"[yellow]Offline (Fallback to Ollama: {manager.ollama_host})[/yellow]"
+    console.print(f"[bold]Model Manager Engine:[/bold] {server_status}\n")
+
+    table = Table(title="Aiuthor • Active Role Assignments (Env Vars)", border_style="dim", show_lines=True)
     table.add_column("Agent Role", style="bold cyan")
     table.add_column("Assigned Model", style="bold")
     table.add_column("Environment Variable", style="dim")
     table.add_column("Local Status")
 
     for role_name, info in roles.items():
-        status_str = "[green]✓ Installed & Verified[/green]" if info["installed"] else "[red]✗ Missing (Not Found in Ollama/Registry)[/red]"
+        status_str = "[green]✓ Installed & Verified[/green]" if info["installed"] else "[red]✗ Missing (Not Found in Model Manager)[/red]"
         table.add_row(
             role_name.capitalize(),
             info["model"],
@@ -44,11 +48,11 @@ def cmd_models(args):
     console.print(table)
 
     all_models = manager.get_all_available_model_names()
-    console.print(f"\n[bold]Discovered Local Models in Central Registry / Ollama ({len(all_models)}):[/bold]")
+    console.print(f"\n[bold]Discovered Models in Model Manager / Registry ({len(all_models)}):[/bold]")
     for m in all_models:
         console.print(f"  • {m}")
-    console.print(f"\n[dim]Model Manager Registry: {manager.registry_file}[/dim]")
-    console.print(f"[dim]Ollama Endpoint: {manager.ollama_host}[/dim]")
+    console.print(f"\n[dim]Model Manager Endpoint: {manager.model_manager_url}[/dim]")
+    console.print(f"[dim]Registry File: {manager.registry_file}[/dim]")
     console.print("[dim]Override roles anytime via .env or shell environment variables (e.g. export AIUTHOR_DRAFTING_MODEL=...)[/dim]")
 
 

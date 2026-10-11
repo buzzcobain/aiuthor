@@ -16,7 +16,7 @@ from .scoper import scope_project, ScopingResult
 from .vcs import GitManager
 from .heuristics import analyze_prose, LintReport
 from .agents import (
-    OllamaClient,
+    ModelManagerClient,
     ArchitectAgent,
     DraftingAgent,
     CriticAgent,
@@ -32,7 +32,7 @@ class BookProject:
         self.project_dir.mkdir(parents=True, exist_ok=True)
         self.vcs = GitManager(self.project_dir)
         self.config = model_config or get_model_config()
-        self.client = OllamaClient()
+        self.client = ModelManagerClient()
 
         # Subdirectories
         self.chapters_dir = self.project_dir / "chapters"

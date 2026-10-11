@@ -1,11 +1,7 @@
-"""Looping Agents Engine powered by local Ollama models.
+"""Looping Agents Engine powered by Model Manager (LocalHub) with Ollama fallback.
 
-Includes:
-- OllamaClient with DeepSeek-R1 thinking tag sanitization
-- ArchitectAgent (Generates Bible & Master Outline)
-- DraftingAgent (Generates Initial Scene/Chapter Prose)
-- CriticAgent (Humanizer Reviewer: audits dialogue, subtext, and pacing)
-- RevisionAgent (Applies Heuristic + Critic patches)
+Routes inference through the Model Manager server (http://127.0.0.1:8990/v1/chat/completions),
+with automatic DeepSeek-R1 thinking tag sanitization.
 """
 
 import json
@@ -13,34 +9,44 @@ import re
 from typing import Dict, Any, List, Optional
 import httpx
 
-from .config import DEFAULT_OLLAMA_HOST, ModelConfig
+from .config import DEFAULT_MODEL_MANAGER_URL, DEFAULT_OLLAMA_HOST, ModelConfig
 from .heuristics import LintReport
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Strips <think>...</think> reasoning blocks from DeepSeek-R1 outputs."""
+    """Strips <think>...</think> reasoning blocks from DeepSeek-R1 / thinking outputs."""
     cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     return cleaned.strip()
 
 
-class OllamaClient:
-    """Client for local Ollama HTTP API."""
+class ModelManagerClient:
+    """Client for Model Manager (LocalHub) OpenAI-compatible server on port 8990."""
 
-    def __init__(self, host: str = DEFAULT_OLLAMA_HOST):
-        self.host = host.rstrip("/")
+    def __init__(self, manager_url: str = DEFAULT_MODEL_MANAGER_URL, fallback_ollama: str = DEFAULT_OLLAMA_HOST):
+        self.manager_url = manager_url.rstrip("/")
+        self.fallback_ollama = fallback_ollama.rstrip("/")
 
-    def is_available(self) -> bool:
-        """Checks if local Ollama daemon is reachable."""
+    def is_manager_available(self) -> bool:
+        """Checks if Model Manager application is reachable on port 8990."""
         try:
-            r = httpx.get(f"{self.host}/api/tags", timeout=3.0)
+            r = httpx.get(f"{self.manager_url}/v1/models", timeout=2.5)
             return r.status_code == 200
         except Exception:
             return False
 
     def list_models(self) -> List[str]:
-        """Returns list of installed model tags."""
+        """Returns list of active models available in Model Manager."""
         try:
-            r = httpx.get(f"{self.host}/api/tags", timeout=4.0)
+            r = httpx.get(f"{self.manager_url}/v1/models", timeout=3.0)
+            if r.status_code == 200:
+                data = r.json()
+                return [m["id"] for m in data.get("data", [])]
+        except Exception:
+            pass
+
+        # Fallback to Ollama tags if manager offline
+        try:
+            r = httpx.get(f"{self.fallback_ollama}/api/tags", timeout=3.0)
             if r.status_code == 200:
                 data = r.json()
                 return [m["name"] for m in data.get("models", [])]
@@ -49,31 +55,54 @@ class OllamaClient:
         return []
 
     def generate(self, model: str, prompt: str, system: Optional[str] = None, temperature: float = 0.7) -> str:
-        """Executes a non-streaming generation request."""
-        payload: Dict[str, Any] = {
+        """Generates completion via Model Manager (/v1/chat/completions), with Ollama fallback."""
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        # 1. Primary: Model Manager OpenAI Endpoint
+        if self.is_manager_available():
+            try:
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature
+                }
+                with httpx.Client(timeout=300.0) as client:
+                    resp = client.post(f"{self.manager_url}/v1/chat/completions", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    raw = data["choices"][0]["message"]["content"]
+                    return strip_thinking_tags(raw)
+            except Exception as e:
+                # If manager errors out, attempt fallback
+                pass
+
+        # 2. Fallback: Direct Ollama API
+        payload = {
             "model": model,
             "prompt": prompt,
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_ctx": 16384  # Standard context window
+                "num_ctx": 16384
             }
         }
         if system:
             payload["system"] = system
 
         with httpx.Client(timeout=300.0) as client:
-            resp = client.post(f"{self.host}/api/generate", json=payload)
+            resp = client.post(f"{self.fallback_ollama}/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
-            raw_response = data.get("response", "")
-            return strip_thinking_tags(raw_response)
+            return strip_thinking_tags(data.get("response", ""))
 
 
 class ArchitectAgent:
     """Generates the World Bible and Master Chapter Outline."""
 
-    def __init__(self, client: OllamaClient, config: ModelConfig):
+    def __init__(self, client: ModelManagerClient, config: ModelConfig):
         self.client = client
         self.config = config
 
@@ -101,7 +130,7 @@ INSTRUCTIONS:
    - 'tone_and_voice': specific stylistic rules (e.g. terse dialogue, sensory grit, POV distance).
    - 'characters': list of main characters with 'name', 'role', 'external_goal', 'internal_flaw', and 'voice_notes'.
    - 'major_subplots': list of 2-3 secondary narrative arcs running alongside the main spine.
-2. 'outline' must be an array of exactly {min(spec.get('target_chapters', 20), 12)} high-priority chapter blueprints (or summarize into milestone chapters). Each chapter must have:
+2. 'outline' must be an array of exactly {min(spec.get('target_chapters', 20), 12)} high-priority chapter blueprints. Each chapter must have:
    - 'chapter_number': int
    - 'title': str
    - 'pov_character': str
@@ -123,7 +152,6 @@ Return ONLY valid JSON matching this schema:
             temperature=self.config.temperature_reasoning
         )
         
-        # Extract JSON from response
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             try:
@@ -131,7 +159,6 @@ Return ONLY valid JSON matching this schema:
             except json.JSONDecodeError:
                 pass
         
-        # Fallback structured placeholder if model output was malformed
         return {
             "bible": {
                 "world_rules": ["Actions have tangible physical and moral consequences.", "No easy rescue mechanisms."],
@@ -157,7 +184,7 @@ Return ONLY valid JSON matching this schema:
 class DraftingAgent:
     """Drafts scene/chapter prose using beat-by-beat grounding and negative anti-AI constraints."""
 
-    def __init__(self, client: OllamaClient, config: ModelConfig):
+    def __init__(self, client: ModelManagerClient, config: ModelConfig):
         self.client = client
         self.config = config
 
@@ -201,7 +228,7 @@ Start directly in the action or scene environment. No meta-commentary, no introd
 class CriticAgent:
     """Adversarial Humanizer Reviewer: audits dialogue, subtext, pacing, and heuristic violations."""
 
-    def __init__(self, client: OllamaClient, config: ModelConfig):
+    def __init__(self, client: ModelManagerClient, config: ModelConfig):
         self.client = client
         self.config = config
 
@@ -249,7 +276,7 @@ CRITIQUE INSTRUCTIONS:
 class RevisionAgent:
     """Rewrites and humanizes the draft by applying the heuristic report and critic directives."""
 
-    def __init__(self, client: OllamaClient, config: ModelConfig):
+    def __init__(self, client: ModelManagerClient, config: ModelConfig):
         self.client = client
         self.config = config
 

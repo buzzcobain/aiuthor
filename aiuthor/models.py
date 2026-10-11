@@ -2,8 +2,9 @@
 
 Bridges Aiuthor with:
 1. Environment-variable configured role assignments.
-2. The Central LocalHub / Model Manager registry (~/.models/registry.json).
-3. The local Ollama daemon.
+2. The Model Manager application server (http://127.0.0.1:8990/v1/models).
+3. The Central LocalHub / Model Manager registry (~/.models/registry.json).
+4. The local Ollama daemon.
 """
 
 import os
@@ -19,7 +20,7 @@ DEFAULT_REGISTRY_FILE = DEFAULT_MODELS_ROOT / "registry.json"
 
 
 class ModelManager:
-    """Manages model discovery, verification, and role assignments."""
+    """Manages model discovery, verification, and role assignments via Model Manager."""
 
     def __init__(
         self,
@@ -45,6 +46,25 @@ class ModelManager:
             "rewriter": cfg.rewriter_model
         }
 
+    def is_manager_running(self) -> bool:
+        """Checks if the Model Manager server is active on port 8990."""
+        try:
+            r = httpx.get(f"{self.model_manager_url}/v1/models", timeout=2.0)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def list_manager_models(self) -> List[Dict[str, Any]]:
+        """Queries the live Model Manager server (/v1/models) for active models."""
+        try:
+            r = httpx.get(f"{self.model_manager_url}/v1/models", timeout=3.0)
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("data", [])
+        except Exception:
+            pass
+        return []
+
     def list_registry_models(self) -> List[Dict[str, Any]]:
         """Reads installed model metadata from the Central Model Manager (~/.models/registry.json)."""
         if self.registry_file.exists():
@@ -68,12 +88,18 @@ class ModelManager:
         return []
 
     def get_all_available_model_names(self) -> List[str]:
-        """Returns unified list of model names found across Ollama and the central registry."""
+        """Returns unified list of model names found across Model Manager, registry, and Ollama."""
         names = set()
         
+        # From Live Model Manager
+        for m in self.list_manager_models():
+            if m.get("id"):
+                names.add(m["id"])
+
         # From Ollama
         for m in self.list_ollama_models():
-            names.add(m.get("name"))
+            if m.get("name"):
+                names.add(m["name"])
 
         # From Registry
         for m in self.list_registry_models():
