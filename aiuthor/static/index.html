@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aiuthor • Multi-Agent Long-Form Book Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #090a0d;
+      --bg-surface: #101217;
+      --bg-elevated: #161820;
+      --bg-active: #1d202a;
+      --border-subtle: #1e212b;
+      --border-strong: #2a2e3d;
+      --text-main: #e6edf3;
+      --text-muted: #8b949e;
+      --text-dim: #545d68;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-serif: 'Newsreader', Georgia, serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header Bar */
+    header {
+      height: 48px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .brand-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--border-subtle);
+    }
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+    .dot.offline { background: var(--accent-red); }
+
+    /* Layout Shell */
+    .shell {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Nav Sidebar */
+    nav {
+      width: 220px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      padding: 12px 0;
+    }
+    .nav-label {
+      padding: 8px 16px 4px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      font-family: var(--font-sans);
+      transition: background 0.1s, color 0.1s;
+    }
+    .nav-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text-main);
+    }
+    .nav-btn.active {
+      background: var(--bg-active);
+      color: var(--text-main);
+      font-weight: 500;
+      border-left: 2px solid var(--accent-blue);
+    }
+    .nav-spacer { flex: 1; }
+
+    /* Main Content Area */
+    main {
+      flex: 1;
+      background: var(--bg-base);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 24px 32px;
+    }
+
+    /* Panels & Containers */
+    .view-panel { display: none; }
+    .view-panel.active { display: block; }
+
+    .panel-header {
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .panel-title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+    }
+    .panel-desc {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Form Elements */
+    .field {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 8px 10px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      border-radius: 3px;
+      outline: none;
+      transition: border-color 0.1s;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      border-color: var(--accent-blue);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+      line-height: 1.4;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-main);
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .btn:hover {
+      background: var(--bg-active);
+      border-color: var(--text-muted);
+    }
+    .btn-primary {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue-hover);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background: var(--accent-blue-hover);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Metric Badges */
+    .stat-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      padding: 12px;
+      border-radius: 3px;
+    }
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+    }
+    .stat-value {
+      font-size: 18px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      margin-top: 4px;
+      color: var(--text-main);
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th {
+      text-align: left;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-strong);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    td {
+      padding: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-main);
+    }
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    /* Prose & Diff Viewer */
+    .prose-editor {
+      font-family: var(--font-serif);
+      font-size: 16px;
+      line-height: 1.8;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      padding: 32px 48px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      max-height: 65vh;
+      overflow-y: auto;
+      color: #d1d5db;
+    }
+    .diff-pane {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      background: #060709;
+      border: 1px solid var(--border-subtle);
+      padding: 16px;
+      border-radius: 3px;
+      white-space: pre-wrap;
+      max-height: 55vh;
+      overflow-y: auto;
+      color: #94a3b8;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      border: 1px solid var(--border-subtle);
+    }
+    .badge-green { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.05); }
+    .badge-amber { color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.05); }
+    .badge-red { color: var(--accent-red); border-color: rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); }
+
+    /* Deficit Question Card */
+    .question-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--accent-amber);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      border-radius: 2px;
+    }
+    .question-title {
+      font-weight: 500;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <span>AIUTHOR</span>
+      <span class="brand-tag">v0.1.0</span>
+      <span style="color: var(--text-dim);">•</span>
+      <span id="header-title" style="color: var(--text-muted); font-size: 12px;">Untitled Project</span>
+    </div>
+    <div class="status-bar">
+      <div class="status-indicator">
+        <span class="dot" id="model-dot"></span>
+        <span id="model-status">Model Manager: Connected</span>
+      </div>
+      <div style="color: var(--text-dim);">|</div>
+      <div id="stats-summary">0 Words • 0 Chapters</div>
+    </div>
+  </header>
+
+  <!-- Shell -->
+  <div class="shell">
+    <nav>
+      <div class="nav-label">Authoring Workflow</div>
+      <button class="nav-btn active" onclick="switchTab('scoping')">1. Scoping Studio</button>
+      <button class="nav-btn" onclick="switchTab('architecture')">2. World Bible & Outline</button>
+      <button class="nav-btn" onclick="switchTab('drafting')">3. Chapter Workbench</button>
+      <button class="nav-btn" onclick="switchTab('diffs')">4. Revisions & Diffs</button>
+      <button class="nav-btn" onclick="switchTab('manuscript')">5. Full Manuscript</button>
+      
+      <div class="nav-label" style="margin-top: 16px;">System & Engine</div>
+      <button class="nav-btn" onclick="switchTab('models')">Model Manager & Roles</button>
+      <button class="nav-btn" onclick="switchTab('vcs')">Git Version Control</button>
+    </nav>
+
+    <main>
+
+      <!-- TAB 1: SCOPING STUDIO -->
+      <section id="tab-scoping" class="view-panel active">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Scoping Studio & Deficit Audit</h1>
+            <p class="panel-desc">Benchmark genre length quotas and resolve structural plot deficits before drafting.</p>
+          </div>
+          <button class="btn btn-primary" onclick="initProject()">Run Scoping Analysis</button>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Book Premise & Target Audience</div>
+            <div class="field">
+              <label>Book Title</label>
+              <input type="text" id="init-title" value="Terminal Shift" placeholder="e.g. The Glass Archive">
+            </div>
+            <div class="field">
+              <label>Genre / Publishing Target</label>
+              <select id="init-genre">
+                <option value="">Auto-Detect from Premise</option>
+                <option value="thriller">Commercial Thriller / Mystery (~75,000 words)</option>
+                <option value="epic_fantasy">Epic / High Fantasy or Space Opera (~105,000 words)</option>
+                <option value="ya_fantasy">Young Adult Fantasy (~75,000 words)</option>
+                <option value="literary_fiction">Literary / Contemporary Fiction (~80,000 words)</option>
+                <option value="horror">Horror / Psychological Suspense (~72,000 words)</option>
+                <option value="romance">Romance (~65,000 words)</option>
+                <option value="nonfiction_business">Non-Fiction / Framework (~48,000 words)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Detailed Premise, Characters, and World Concept</label>
+              <textarea id="init-prompt" style="height: 160px;" placeholder="Describe your protagonist, setting constraints, initial conflict, and audience tone...">A cynical air-traffic controller at an orbital asteroid refinery discovers an incoming cargo ship with transponders wiped. He has six hours to decide whether to vent the docking bay. Commercial Sci-Fi Thriller.</textarea>
+            </div>
+          </div>
+
+          <div class="card" id="scoping-results-card">
+            <div class="card-title">Architectural Quotas & Mass Audit</div>
+            <div id="scoping-empty" style="color: var(--text-dim); padding: 40px 0; text-align: center;">
+              Submit your premise to calculate target length benchmarks and identify missing structural elements.
+            </div>
+            <div id="scoping-content" style="display: none;">
+              <div class="grid-3" style="margin-bottom: 16px;">
+                <div class="stat-box">
+                  <div class="stat-label">Target Word Count</div>
+                  <div class="stat-value" id="scope-target-words">75,000</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-label">Target Chapters</div>
+                  <div class="stat-value" id="scope-chapters">35</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-label">Words / Chapter</div>
+                  <div class="stat-value" id="scope-chapter-words">2,100</div>
+                </div>
+              </div>
+
+              <div class="card-title" style="font-size: 12px; margin-top: 16px;">Identified Context Deficits</div>
+              <div id="deficits-list"></div>
+
+              <div class="card-title" style="font-size: 12px; margin-top: 16px;">Clarifying Questions to Fill Target Length</div>
+              <div id="questions-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: ARCHITECTURE & OUTLINE -->
+      <section id="tab-architecture" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">World Bible & Master Beat Sheet</h1>
+            <p class="panel-desc">Structural constraints, character dossiers, and chapter blueprints compiled by DeepSeek-R1.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-compile-outline" onclick="compileOutline()">Compile Outline via Model Manager</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Deficit Clarifications (Answers to fill the manuscript)</div>
+          <div class="field">
+            <textarea id="outline-answers" style="height: 70px;" placeholder="Provide answers to the questions above (e.g. Antagonist motives, subplots, world limitations)...">Antagonist is the refinery's private military contractor covering up an outbreak. Subplot: Controller's estranged sister is aboard that incoming ship. World rule: Communications laser takes 40 minutes per round-trip to Earth.</textarea>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">World Bible Constraints</div>
+            <pre id="bible-viewer" class="diff-pane" style="max-height: 45vh;">No Bible generated yet.</pre>
+          </div>
+          <div class="card">
+            <div class="card-title">Master Outline Beat Sheet</div>
+            <div id="outline-table-container" style="max-height: 45vh; overflow-y: auto;">
+              <p style="color: var(--text-dim); padding: 20px;">No outline compiled yet.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: CHAPTER WORKBENCH -->
+      <section id="tab-drafting" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Chapter Production Workbench</h1>
+            <p class="panel-desc">Execute the Drafter &rarr; Anti-AI Linter &rarr; Critic &rarr; Revision multi-agent loop.</p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <select id="workbench-chapter-select" onchange="loadChapterDetail(this.value)" style="width: 140px;">
+              <option value="1">Chapter 1</option>
+            </select>
+            <button class="btn btn-primary" id="btn-run-loop" onclick="runDraftLoop()">Run Multi-Agent Loop</button>
+          </div>
+        </div>
+
+        <div class="grid-3" style="margin-bottom: 16px;">
+          <div class="stat-box">
+            <div class="stat-label">Human Score (Heuristic)</div>
+            <div class="stat-value" id="wb-score">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Burstiness Index (CV)</div>
+            <div class="stat-value" id="wb-cv">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Prose Word Count</div>
+            <div class="stat-value" id="wb-words">0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" id="wb-chapter-header">Chapter Prose View</div>
+          <div id="wb-prose-view" class="prose-editor">Select or draft a chapter to view finalized manuscript text.</div>
+        </div>
+      </section>
+
+      <!-- TAB 4: REVISIONS & DIFFS -->
+      <section id="tab-diffs" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Adversarial Critic Pass & Git Diff</h1>
+            <p class="panel-desc">Compare the raw drafter text against the revised, humanized version with the editor critique.</p>
+          </div>
+          <select id="diff-chapter-select" onchange="loadDiffDetail(this.value)" style="width: 140px;">
+            <option value="1">Chapter 1</option>
+          </select>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Editorial Critique Report</div>
+            <pre id="critique-viewer" class="diff-pane" style="max-height: 55vh; color: #cbd5e1;">No review report available.</pre>
+          </div>
+          <div class="card">
+            <div class="card-title">Unified Git Diff (Initial Draft vs Humanized Revision)</div>
+            <pre id="diff-viewer" class="diff-pane">No diff recorded.</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: MANUSCRIPT -->
+      <section id="tab-manuscript" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Full Manuscript Assembly</h1>
+            <p class="panel-desc">Compile all finalized chapters into a single master document.</p>
+          </div>
+          <button class="btn btn-primary" onclick="buildManuscript()">Build Manuscript.md</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Compiled Manuscript Reader</div>
+          <div id="manuscript-viewer" class="prose-editor">Compile chapters to read the full manuscript.</div>
+        </div>
+      </section>
+
+      <!-- TAB 6: MODELS -->
+      <section id="tab-models" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Model Manager Architecture</h1>
+            <p class="panel-desc">Inspect active roles and discovered local weights on Apple Silicon.</p>
+          </div>
+          <button class="btn" onclick="loadModels()">Refresh Status</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Active Role Bindings (Configured via Environment Variables)</div>
+          <table id="models-table">
+            <thead>
+              <tr>
+                <th>Agent Role</th>
+                <th>Assigned Model</th>
+                <th>Environment Variable</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Discovered Local Weights (Port 8990 & Registry)</div>
+          <div id="available-models-list" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 40vh; overflow-y: auto;"></div>
+        </div>
+      </section>
+
+      <!-- TAB 7: VCS -->
+      <section id="tab-vcs" class="view-panel">
+        <div class="panel-header">
+          <div>
+            <h1 class="panel-title">Git Version Control Log</h1>
+            <p class="panel-desc">Atomic commits recorded across outlines, initial drafts, and humanized revisions.</p>
+          </div>
+          <button class="btn" onclick="loadGitLog()">Refresh Log</button>
+        </div>
+
+        <div class="card">
+          <table id="git-table">
+            <thead>
+              <tr>
+                <th>Hash</th>
+                <th>Date</th>
+                <th>Milestone / Commit Message</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // Tab Switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+      
+      const targetBtn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId));
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const targetPanel = document.getElementById('tab-' + tabId);
+      if (targetPanel) targetPanel.classList.add('active');
+
+      if (tabId === 'architecture') loadOutline();
+      if (tabId === 'drafting') loadChaptersList();
+      if (tabId === 'diffs') loadChaptersList();
+      if (tabId === 'manuscript') loadManuscript();
+      if (tabId === 'models') loadModels();
+      if (tabId === 'vcs') loadGitLog();
+    }
+
+    // Polling System Status
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        if (data.spec && data.spec.title) {
+          document.getElementById('header-title').innerText = data.spec.title;
+        }
+        document.getElementById('stats-summary').innerText = `${data.total_words.toLocaleString()} Words • ${data.chapters_completed} Chapters`;
+        
+        const dot = document.getElementById('model-dot');
+        const statusText = document.getElementById('model-status');
+        if (data.manager_running) {
+          dot.className = 'dot';
+          statusText.innerText = 'Model Manager: Live (Port 8990)';
+        } else {
+          dot.className = 'dot offline';
+          statusText.innerText = 'Model Manager: Offline (Ollama Fallback)';
+        }
+      } catch (err) {
+        console.error('Status fetch error:', err);
+      }
+    }
+
+    // Step 1: Init & Scoping
+    async function initProject() {
+      const title = document.getElementById('init-title').value.trim();
+      const prompt = document.getElementById('init-prompt').value.trim();
+      const genre = document.getElementById('init-genre').value;
+
+      if (!title || !prompt) {
+        alert('Please provide both a title and premise prompt.');
+        return;
+      }
+
+      const res = await fetch('/api/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, prompt, genre })
+      });
+      const data = await res.json();
+
+      document.getElementById('scoping-empty').style.display = 'none';
+      document.getElementById('scoping-content').style.display = 'block';
+
+      document.getElementById('scope-target-words').innerText = data.target_words.toLocaleString();
+      document.getElementById('scope-chapters').innerText = data.target_chapters;
+      document.getElementById('scope-chapter-words').innerText = data.words_per_chapter.toLocaleString();
+
+      const defContainer = document.getElementById('deficits-list');
+      defContainer.innerHTML = '';
+      (data.context_deficits || []).forEach(d => {
+        const item = document.createElement('div');
+        item.style.color = 'var(--text-muted)';
+        item.style.marginBottom = '4px';
+        item.innerHTML = `• ${d}`;
+        defContainer.appendChild(item);
+      });
+
+      const qContainer = document.getElementById('questions-list');
+      qContainer.innerHTML = '';
+      (data.clarifying_questions || []).forEach((q, idx) => {
+        const box = document.createElement('div');
+        box.className = 'question-item';
+        box.innerHTML = `<div class="question-title">[${idx + 1}] ${q.question}</div>`;
+        qContainer.appendChild(box);
+      });
+
+      refreshStatus();
+    }
+
+    // Step 2: Outline
+    async function compileOutline() {
+      const btn = document.getElementById('btn-compile-outline');
+      const answers = document.getElementById('outline-answers').value;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Compiling via DeepSeek-R1...';
+
+      try {
+        const res = await fetch('/api/outline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answers })
+        });
+        const data = await res.json();
+        loadOutline();
+      } catch (e) {
+        alert('Compilation failed: ' + e);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Compile Outline via Model Manager';
+      }
+    }
+
+    async function loadOutline() {
+      const res = await fetch('/api/outline');
+      const data = await res.json();
+      
+      document.getElementById('bible-viewer').innerText = JSON.stringify(data.bible, null, 2);
+
+      const container = document.getElementById('outline-table-container');
+      if (!data.outline || data.outline.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-dim); padding: 20px;">No outline compiled yet.</p>';
+        return;
+      }
+
+      let html = '<table><thead><tr><th>#</th><th>Title</th><th>POV</th><th>Target</th></tr></thead><tbody>';
+      data.outline.forEach(ch => {
+        html += `<tr>
+          <td>${ch.chapter_number}</td>
+          <td><strong>${ch.title}</strong><br><span style="color:var(--text-dim); font-size:11px;">${ch.core_conflict || ''}</span></td>
+          <td>${ch.pov_character || '-'}</td>
+          <td>${ch.target_word_count ? ch.target_word_count.toLocaleString() : '-'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    // Step 3 & 4: Chapters
+    async function loadChaptersList() {
+      const res = await fetch('/api/chapters');
+      const chapters = await res.json();
+
+      const selects = [document.getElementById('workbench-chapter-select'), document.getElementById('diff-chapter-select')];
+      selects.forEach(sel => {
+        if (!sel) return;
+        sel.innerHTML = '';
+        chapters.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.chapter_number;
+          opt.innerText = `Ch ${c.chapter_number}: ${c.title || 'Untitled'}`;
+          sel.appendChild(opt);
+        });
+      });
+
+      if (chapters.length > 0) {
+        loadChapterDetail(chapters[0].chapter_number);
+        loadDiffDetail(chapters[0].chapter_number);
+      }
+    }
+
+    async function loadChapterDetail(chNum) {
+      const res = await fetch(`/api/chapters/${chNum}`);
+      const data = await res.json();
+
+      document.getElementById('wb-chapter-header').innerText = `Chapter ${data.chapter_number}: ${data.blueprint ? data.blueprint.title : ''}`;
+      document.getElementById('wb-prose-view').innerText = data.final_prose || data.v1_draft || 'No text drafted yet. Click "Run Multi-Agent Loop" above.';
+
+      if (data.lint_report) {
+        document.getElementById('wb-score').innerText = data.lint_report.score ? data.lint_report.score.toFixed(1) : '--';
+        document.getElementById('wb-cv').innerText = data.lint_report.cv ? data.lint_report.cv.toFixed(2) : '--';
+      }
+      document.getElementById('wb-words').innerText = data.final_prose ? data.final_prose.split(/\s+/).length.toLocaleString() : '0';
+    }
+
+    async function loadDiffDetail(chNum) {
+      const res = await fetch(`/api/chapters/${chNum}`);
+      const data = await res.json();
+      document.getElementById('critique-viewer').innerText = data.review || 'No critic report generated.';
+      document.getElementById('diff-viewer').innerText = data.diff || 'No diff tracked.';
+    }
+
+    async function runDraftLoop() {
+      const chNum = parseInt(document.getElementById('workbench-chapter-select').value);
+      const btn = document.getElementById('btn-run-loop');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Drafting & Humanizing...';
+
+      try {
+        const res = await fetch('/api/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chapter: chNum })
+        });
+        const result = await res.json();
+        loadChapterDetail(chNum);
+        loadDiffDetail(chNum);
+        refreshStatus();
+      } catch (err) {
+        alert('Draft loop error: ' + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Run Multi-Agent Loop';
+      }
+    }
+
+    // Step 5: Manuscript
+    async function loadManuscript() {
+      const res = await fetch('/api/manuscript');
+      const data = await res.json();
+      document.getElementById('manuscript-viewer').innerText = data.content || 'No manuscript assembled. Click "Build Manuscript.md".';
+    }
+
+    async function buildManuscript() {
+      const res = await fetch('/api/manuscript/build', { method: 'POST' });
+      const data = await res.json();
+      loadManuscript();
+      refreshStatus();
+    }
+
+    // Models View
+    async function loadModels() {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+
+      const tbody = document.querySelector('#models-table tbody');
+      tbody.innerHTML = '';
+      for (const [role, info] of Object.entries(data.roles || {})) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${role.toUpperCase()}</strong></td>
+          <td><code>${info.model}</code></td>
+          <td><span style="color:var(--text-dim);">${info.env_var}</span></td>
+          <td>${info.installed ? '<span class="badge badge-green">✓ Installed</span>' : '<span class="badge badge-red">✗ Missing</span>'}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      const list = document.getElementById('available-models-list');
+      list.innerHTML = '';
+      (data.all_models || []).forEach(m => {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.style.color = 'var(--text-muted)';
+        badge.innerText = m;
+        list.appendChild(badge);
+      });
+    }
+
+    // Git Log View
+    async function loadGitLog() {
+      const res = await fetch('/api/git/log');
+      const commits = await res.json();
+
+      const tbody = document.querySelector('#git-table tbody');
+      tbody.innerHTML = '';
+      commits.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><code>${c.hash}</code></td>
+          <td><span style="color:var(--text-dim);">${c.date}</span></td>
+          <td>${c.message}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Initial Load
+    refreshStatus();
+  </script>
+</body>
+</html>

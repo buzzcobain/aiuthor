@@ -258,9 +258,34 @@ def cmd_build(args):
     )
 
 
+def cmd_serve(args):
+    """Launches the Aiuthor web server workbench."""
+    import uvicorn
+    import webbrowser
+    import threading
+    from .server import app
+
+    console.print(f"[bold]Starting Aiuthor Workbench on http://{args.host}:{args.port}...[/bold]")
+    if not args.no_open:
+        def open_browser():
+            import time
+            time.sleep(0.8)
+            webbrowser.open(f"http://{args.host}:{args.port}")
+        threading.Thread(target=open_browser, daemon=True).start()
+
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Book Foundry • Local Multi-Agent Long-Form Book Engine")
+    parser = argparse.ArgumentParser(description="Aiuthor • Local Multi-Agent Long-Form Book Engine")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # serve
+    p_serve = subparsers.add_parser("serve", help="Launch the local visual workbench UI in your browser")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    p_serve.add_argument("--port", type=int, default=8995, help="Port to listen on (default: 8995)")
+    p_serve.add_argument("--no-open", action="store_true", help="Do not open browser automatically")
+    p_serve.set_defaults(func=cmd_serve)
 
     # models
     p_models = subparsers.add_parser("models", help="Inspect active model assignments and central Model Manager status")
