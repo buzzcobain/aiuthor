@@ -192,15 +192,60 @@ class BookProject:
         critic = CriticAgent(self.client, self.config)
         rewriter = RevisionAgent(self.client, self.config)
 
-        # 1. Draft
-        notify("drafting", f"Stage 1/5: Drafter writing initial scene prose with {self.config.drafting_model}...")
-        raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context)
+        final_file = self.chapters_dir / f"chapter_{chapter_num:02d}.md"
         v1_file = self.drafts_v1_dir / f"chapter_{chapter_num:02d}_v1.md"
+        target_words = chapter_info.get("target_word_count", 3000)
+        min_words_required = max(1800, int(target_words * 0.70))
+
+        # Check existing prose quality if already drafted
+        if final_file.exists():
+            existing_text = final_file.read_text().strip()
+            existing_lint = analyze_prose(existing_text)
+            
+            # Check if existing meets all quality gates (word count, human score, flow, zero cliches)
+            meets_word_count = existing_lint.word_count >= min_words_required
+            meets_human_score = existing_lint.human_score >= 80.0
+            meets_flow = existing_lint.paragraph_flow_score >= 80.0
+            meets_cliches = len(existing_lint.cliches_found) == 0
+
+            notify("evaluating", f"Evaluating existing Chapter {chapter_num} against new quality rules ({existing_lint.word_count} words, score {existing_lint.human_score})...")
+
+            if meets_word_count and meets_human_score and meets_flow and meets_cliches:
+                notify("complete", f"✓ Chapter {chapter_num} already meets all rules ({existing_lint.word_count:,} words, score {existing_lint.human_score}). Skipping re-draft.")
+                return {
+                    "chapter_number": chapter_num,
+                    "title": chapter_info.get("title"),
+                    "initial_words": existing_lint.word_count,
+                    "final_words": existing_lint.word_count,
+                    "initial_score": existing_lint.human_score,
+                    "final_score": existing_lint.human_score,
+                    "burstiness_initial": existing_lint.burstiness_cv,
+                    "burstiness_final": existing_lint.burstiness_cv,
+                    "commit": "cached",
+                    "diff_snippet": "Already meets new quality and length standards.",
+                    "final_file": str(final_file),
+                    "skipped_generation": True
+                }
+            else:
+                deficits = []
+                if not meets_word_count:
+                    deficits.append(f"truncated length ({existing_lint.word_count} words < required {min_words_required})")
+                if not meets_human_score:
+                    deficits.append(f"low human score ({existing_lint.human_score} < 80.0)")
+                if not meets_flow:
+                    deficits.append(f"paragraph flow issues ({existing_lint.paragraph_flow_score} < 80.0)")
+                if not meets_cliches:
+                    deficits.append(f"{len(existing_lint.cliches_found)} AI cliché markers detected")
+                notify("regenerating", f"Chapter {chapter_num} failed quality audit: {', '.join(deficits)}. Re-running full multi-agent pipeline...")
+
+        # 1. Draft
+        notify("drafting", f"Stage 1/5: Drafter writing initial multi-scene prose with {self.config.drafting_model}...")
+        raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context)
         v1_file.write_text(raw_draft)
         self.vcs.commit(f"draft(ch{chapter_num:02d}): initial raw generation")
 
         # 2. Heuristic Lint
-        notify("linting", "Stage 2/5: Heuristic Linter auditing burstiness cadence & AI cliché markers...")
+        notify("linting", "Stage 2/5: Heuristic Linter auditing burstiness cadence, paragraph flow & AI clichés...")
         lint_v1 = analyze_prose(raw_draft)
 
         # 3. Critic Review
@@ -212,20 +257,27 @@ class BookProject:
         # 4. Revision Loop (Humanizer pass)
         notify("rewriting", f"Stage 4/5: Revision Agent ({self.config.rewriter_model}) rewriting prose & purging clichés...")
         revised_draft = rewriter.revise(raw_draft, critique_text, lint_v1, bible)
-        final_file = self.chapters_dir / f"chapter_{chapter_num:02d}.md"
         final_file.write_text(revised_draft)
 
         # 5. Final Lint
         notify("vcs", "Stage 5/5: Computing final heuristic scores & recording Git commit...")
         lint_v2 = analyze_prose(revised_draft)
 
-        # 6. Commit final revision
+        # 6. Quality Check & Automatic Retry if deficient
+        if lint_v2.word_count < min_words_required or lint_v2.human_score < 75.0:
+            notify("retrying", f"Quality gate alert: Draft was {lint_v2.word_count} words (score {lint_v2.human_score}). Re-prompting revision pass with expansion mandate...")
+            expansion_critique = critique_text + f"\n\nCRITICAL RETRY MANDATE: The current draft is only {lint_v2.word_count} words. You must expand each scene to achieve at least {min_words_required} words without summarizing."
+            revised_draft = rewriter.revise(revised_draft, expansion_critique, lint_v2, bible)
+            final_file.write_text(revised_draft)
+            lint_v2 = analyze_prose(revised_draft)
+
+        # 7. Commit final revision
         commit_hash = self.vcs.commit(
-            f"edit(ch{chapter_num:02d}): humanized revision (score: {lint_v1.human_score} -> {lint_v2.human_score})"
+            f"edit(ch{chapter_num:02d}): humanized revision (score: {lint_v1.human_score} -> {lint_v2.human_score}, words: {lint_v2.word_count})"
         )
 
         diff = self.vcs.get_diff(str(final_file.relative_to(self.project_dir)))
-        notify("complete", f"✓ Chapter {chapter_num} finalized and committed ({commit_hash}).")
+        notify("complete", f"✓ Chapter {chapter_num} finalized and committed ({commit_hash}) with {lint_v2.word_count:,} words.")
 
         return {
             "chapter_number": chapter_num,
