@@ -362,10 +362,11 @@ class CriticAgent:
         if author_rules:
             system_prompt += f"\n\nAUTHOR'S OPERATIONAL CONSTRAINTS:\n{author_rules}"
 
+        cliches_str = ", ".join(c.get("match", str(c)) if isinstance(c, dict) else str(c) for c in lint_report.cliches_found) if lint_report.cliches_found else "None"
         lint_summary = (
             f"Heuristic Lint Score: {lint_report.human_score}/100\n"
             f"Burstiness CV: {lint_report.burstiness_cv} (Target >= 0.45)\n"
-            f"Detected Cliché Markers: {len(lint_report.cliches_found)} ({', '.join(lint_report.cliches_found) if lint_report.cliches_found else 'None'})\n"
+            f"Detected Cliché Markers: {len(lint_report.cliches_found)} ({cliches_str})\n"
             f"Paragraph Flow Score: {lint_report.paragraph_flow_score}/100\n"
             f"Issues: {'; '.join(lint_report.issues)}"
         )
