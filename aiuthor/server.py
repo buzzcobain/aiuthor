@@ -338,7 +338,12 @@ async def get_chapter_detail(chapter_num: int, dir: Optional[str] = None):
             "cv": lint.burstiness_cv if lint else None,
             "passed": lint.passed if lint else None,
             "cliches": lint.cliches_found if lint else [],
-            "issues": lint.issues if lint else []
+            "issues": lint.issues if lint else [],
+            "paragraph_count": lint.paragraph_count if lint else 0,
+            "paragraph_flow_score": lint.paragraph_flow_score if lint else None,
+            "mean_paragraph_words": lint.mean_paragraph_words if lint else None,
+            "flow_feedback": lint.flow_feedback if lint else [],
+            "remediations": lint.remediation_prompts if lint else []
         } if lint else None
     }
 

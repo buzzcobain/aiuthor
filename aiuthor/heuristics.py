@@ -62,6 +62,14 @@ class LintReport:
     passed: bool = True
     issues: List[str] = field(default_factory=list)
     remediation_prompts: List[str] = field(default_factory=list)
+    # Paragraph Flow Analysis
+    paragraph_count: int = 0
+    mean_paragraph_words: float = 0.0
+    paragraph_word_std_dev: float = 0.0
+    paragraph_flow_score: float = 100.0
+    flow_feedback: List[Dict[str, Any]] = field(default_factory=list)
+    monotonous_paragraphs: int = 0
+    repetitive_paragraph_openers: int = 0
 
 
 def split_sentences(text: str) -> List[str]:
@@ -160,11 +168,88 @@ def analyze_prose(text: str) -> LintReport:
         issues.append(f"Excessive sensory filtering ({filter_count} filter phrases). Distances the reader from the action.")
         remediations.append("Eliminate filter phrasing ('she felt', 'he could see'). State the sensation directly as objective reality.")
 
-    # Repetitive openers penalty
-    if repetitive_openers > 1:
-        score -= min(15.0, repetitive_openers * 5.0)
-        issues.append(f"Found {repetitive_openers} repetitive 3-sentence opener runs.")
-        remediations.append("Vary sentence beginnings: invert clauses, lead with prepositional phrases or actions instead of subject pronouns.")
+    # 4. Paragraph Flow & Cadence Analysis
+    raw_paras = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip() and not p.strip().startswith("#")]
+    # Filter out scene break markers
+    clean_paras = [p for p in raw_paras if p not in ("***", "---", "#", "* * *")]
+    para_count = len(clean_paras)
+    
+    flow_feedback = []
+    monotonous_paras = 0
+    repetitive_para_openers = 0
+    para_flow_score = 100.0
+    mean_para_words = 0.0
+    para_std_dev = 0.0
+
+    TRANSITION_WORDS = {
+        "then", "later", "now", "after", "before", "meanwhile", "outside", "inside",
+        "instead", "however", "still", "yet", "suddenly", "finally", "across", "beneath",
+        "above", "beyond", "behind", "though", "without", "despite", "meanwhile"
+    }
+
+    if para_count > 1:
+        para_word_counts = [len(re.findall(r'\b\w+\b', p)) for p in clean_paras]
+        mean_para_words = sum(para_word_counts) / para_count
+        p_var = sum((w - mean_para_words) ** 2 for w in para_word_counts) / para_count
+        para_std_dev = math.sqrt(p_var)
+
+        # A: Check for uniform/brick paragraphs (AI tendency to make every paragraph ~50-60 words)
+        for i, count in enumerate(para_word_counts):
+            if count > 220:
+                monotonous_paras += 1
+                flow_feedback.append({
+                    "type": "dense_block",
+                    "paragraph_index": i + 1,
+                    "snippet": clean_paras[i][:80] + "...",
+                    "message": f"Paragraph {i+1} is overly dense ({count} words). Consider breaking into smaller sensory beats."
+                })
+            elif count < 6 and not clean_paras[i].startswith('"'):
+                flow_feedback.append({
+                    "type": "fragment_beat",
+                    "paragraph_index": i + 1,
+                    "snippet": clean_paras[i],
+                    "message": f"Paragraph {i+1} is an isolated micro-fragment ({count} words)."
+                })
+
+        # B: Check adjacent paragraph length variance
+        flat_transitions = 0
+        for i in range(len(para_word_counts) - 1):
+            diff = abs(para_word_counts[i] - para_word_counts[i+1])
+            if diff < 5 and para_word_counts[i] > 35:
+                flat_transitions += 1
+
+        if flat_transitions >= 3:
+            para_flow_score -= min(20.0, flat_transitions * 4.0)
+            flow_feedback.append({
+                "type": "rhythm_monotony",
+                "paragraph_index": 0,
+                "snippet": "Cadence uniformity",
+                "message": f"Found {flat_transitions} runs of uniform paragraph lengths. Alternate between expansive descriptions and punchy 1-2 sentence beats."
+            })
+
+        # C: Check for repetitive paragraph opening words / pronouns
+        for i in range(len(clean_paras) - 1):
+            first_w1 = (clean_paras[i].split() or [""])[0].lower().strip('",\'')
+            first_w2 = (clean_paras[i+1].split() or [""])[0].lower().strip('",\'')
+            if first_w1 and first_w2 and first_w1 == first_w2 and first_w1 in {"she", "he", "it", "they", "the"}:
+                repetitive_para_openers += 1
+                flow_feedback.append({
+                    "type": "repetitive_opener",
+                    "paragraph_index": i + 2,
+                    "snippet": clean_paras[i+1][:70] + "...",
+                    "message": f"Paragraphs {i+1} and {i+2} both open with '{first_w1.capitalize()}'. Vary paragraph entry angles."
+                })
+
+        # D: Check narrative transitions
+        transition_count = 0
+        for p in clean_paras:
+            first_word = (p.split() or [""])[0].lower().strip('",\'')
+            if first_word in TRANSITION_WORDS:
+                transition_count += 1
+        
+        para_flow_score -= min(25.0, repetitive_para_openers * 6.0)
+        para_flow_score -= min(20.0, (monotonous_paras * 5.0))
+        para_flow_score = max(20.0, min(100.0, para_flow_score))
 
     score = max(0.0, min(100.0, score))
     passed = score >= 75.0 and len(cliches_found) <= 1
@@ -181,5 +266,12 @@ def analyze_prose(text: str) -> LintReport:
         human_score=round(score, 1),
         passed=passed,
         issues=issues,
-        remediation_prompts=remediations
+        remediation_prompts=remediations,
+        paragraph_count=para_count,
+        mean_paragraph_words=round(mean_para_words, 1),
+        paragraph_word_std_dev=round(para_std_dev, 1),
+        paragraph_flow_score=round(para_flow_score, 1),
+        flow_feedback=flow_feedback,
+        monotonous_paragraphs=monotonous_paras,
+        repetitive_paragraph_openers=repetitive_para_openers
     )

@@ -576,14 +576,18 @@
           </div>
         </div>
 
-        <div class="grid-3" style="margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
           <div class="stat-box">
-            <div class="stat-label">Human Score (Heuristic)</div>
+            <div class="stat-label">Human Score</div>
             <div class="stat-value" id="wb-score">--</div>
           </div>
           <div class="stat-box">
-            <div class="stat-label">Burstiness Index (CV)</div>
+            <div class="stat-label">Sentence Rhythm (CV)</div>
             <div class="stat-value" id="wb-cv">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Paragraph Flow</div>
+            <div class="stat-value" id="wb-flow-score">--</div>
           </div>
           <div class="stat-box">
             <div class="stat-label">Prose Word Count</div>
@@ -591,9 +595,20 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" style="margin-bottom: 16px;">
           <div class="card-title" id="wb-chapter-header">Chapter Prose View</div>
           <div id="wb-prose-view" class="prose-editor">Select or draft a chapter to view finalized manuscript text.</div>
+        </div>
+
+        <!-- Paragraph Flow & Transition Audit -->
+        <div class="card">
+          <div class="card-title">
+            <span>Paragraph Cadence & Transition Audit</span>
+            <span id="wb-flow-summary" style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">0 paragraphs analyzed</span>
+          </div>
+          <div id="wb-flow-container" style="max-height: 240px; overflow-y: auto;">
+            <p style="color: var(--text-dim); padding: 12px 0;">Draft or select a chapter to audit narrative flow and transition continuity.</p>
+          </div>
         </div>
       </section>
 
@@ -780,8 +795,8 @@
   </div>
 
   <script>
-    // Tab Switching
-    function switchTab(tabId) {
+    // Tab Switching & State Persistence
+    function switchTab(tabId, pushHash = true) {
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
       
@@ -790,6 +805,13 @@
 
       const targetPanel = document.getElementById('tab-' + tabId);
       if (targetPanel) targetPanel.classList.add('active');
+
+      try {
+        localStorage.setItem('aiuthor_active_tab', tabId);
+        if (pushHash && window.location.hash !== '#' + tabId) {
+          history.replaceState(null, '', '#' + tabId);
+        }
+      } catch (e) {}
 
       if (tabId === 'book') loadBookDetails();
       if (tabId === 'architecture') loadOutline();
@@ -1071,6 +1093,8 @@
       const res = await fetch('/api/chapters');
       const chapters = await res.json();
 
+      const savedChapter = parseInt(localStorage.getItem('aiuthor_active_chapter')) || 1;
+
       const selects = [document.getElementById('workbench-chapter-select'), document.getElementById('diff-chapter-select')];
       selects.forEach(sel => {
         if (!sel) return;
@@ -1079,13 +1103,17 @@
           const opt = document.createElement('option');
           opt.value = c.chapter_number;
           opt.innerText = `Ch ${c.chapter_number}: ${c.title || 'Untitled'}`;
+          if (c.chapter_number === savedChapter) {
+            opt.selected = true;
+          }
           sel.appendChild(opt);
         });
       });
 
       if (chapters.length > 0) {
-        loadChapterDetail(chapters[0].chapter_number);
-        loadDiffDetail(chapters[0].chapter_number);
+        const targetChapter = chapters.some(c => c.chapter_number === savedChapter) ? savedChapter : chapters[0].chapter_number;
+        loadChapterDetail(targetChapter);
+        loadDiffDetail(targetChapter);
       }
     }
 
@@ -1096,9 +1124,43 @@
       document.getElementById('wb-chapter-header').innerText = `Chapter ${data.chapter_number}: ${data.blueprint ? data.blueprint.title : ''}`;
       document.getElementById('wb-prose-view').innerText = data.final_prose || data.v1_draft || 'No text drafted yet. Click "Run Multi-Agent Loop" above.';
 
+      const flowContainer = document.getElementById('wb-flow-container');
+      const flowScore = document.getElementById('wb-flow-score');
+      const flowSummary = document.getElementById('wb-flow-summary');
+
       if (data.lint_report) {
         document.getElementById('wb-score').innerText = data.lint_report.score ? data.lint_report.score.toFixed(1) : '--';
         document.getElementById('wb-cv').innerText = data.lint_report.cv ? data.lint_report.cv.toFixed(2) : '--';
+        
+        flowScore.innerText = data.lint_report.paragraph_flow_score ? data.lint_report.paragraph_flow_score.toFixed(1) : '--';
+        flowSummary.innerText = `${data.lint_report.paragraph_count || 0} paragraphs • avg ${data.lint_report.mean_paragraph_words || 0} words/para`;
+
+        const feedback = data.lint_report.flow_feedback || [];
+        if (feedback.length === 0) {
+          flowContainer.innerHTML = '<div style="color: var(--accent-green); padding: 12px 0;">✓ Excellent paragraph rhythm. No repetitive openers or blocky paragraphs detected.</div>';
+        } else {
+          let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+          feedback.forEach(item => {
+            const badgeClass = item.type === 'repetitive_opener' ? 'badge-yellow' : 'badge-red';
+            html += `
+              <div style="background: var(--bg-surface); border: 1px solid var(--border); padding: 8px 12px; border-radius: 4px; font-size: 12px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <strong style="color: var(--text-main);">${item.message}</strong>
+                  <span class="badge ${badgeClass}">${item.type}</span>
+                </div>
+                ${item.snippet ? `<div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${item.snippet}</div>` : ''}
+              </div>
+            `;
+          });
+          html += '</div>';
+          flowContainer.innerHTML = html;
+        }
+      } else {
+        document.getElementById('wb-score').innerText = '--';
+        document.getElementById('wb-cv').innerText = '--';
+        flowScore.innerText = '--';
+        flowSummary.innerText = '0 paragraphs analyzed';
+        flowContainer.innerHTML = '<p style="color: var(--text-dim); padding: 12px 0;">Draft or select a chapter to audit narrative flow and transition continuity.</p>';
       }
       document.getElementById('wb-words').innerText = data.final_prose ? data.final_prose.split(/\s+/).length.toLocaleString() : '0';
     }
@@ -1270,8 +1332,81 @@
       });
     }
 
-    // Initial Load
-    refreshStatus();
+    // Initial Load & State Restoration on Refresh
+    async function initApp() {
+      // 1. Restore active tab from URL hash or localStorage
+      const hashTab = window.location.hash ? window.location.hash.replace('#', '') : null;
+      const savedTab = hashTab || localStorage.getItem('aiuthor_active_tab') || 'scoping';
+      switchTab(savedTab, false);
+
+      // 2. Refresh status metrics
+      await refreshStatus();
+
+      // 3. Check if an AI generation is currently running on the server
+      try {
+        const res = await fetch('/api/draft/status');
+        if (res.ok) {
+          const status = await res.json();
+          if (status.running) {
+            // Restore live banner
+            const banner = document.getElementById('live-progress-banner');
+            const stageText = document.getElementById('progress-stage');
+            const timeText = document.getElementById('progress-time');
+            const btn = document.getElementById('btn-run-loop');
+            
+            if (banner && stageText && timeText) {
+              banner.style.display = 'block';
+              stageText.innerText = status.details || `Processing Chapter ${status.chapter}...`;
+              const mins = Math.floor(status.elapsed_seconds / 60).toString().padStart(2, '0');
+              const secs = (status.elapsed_seconds % 60).toString().padStart(2, '0');
+              timeText.innerText = `${mins}:${secs}`;
+            }
+            if (btn) {
+              btn.disabled = true;
+              btn.innerHTML = '<span class="spinner"></span> Drafting & Humanizing...';
+            }
+
+            // Resume polling
+            if (draftPollTimer) clearInterval(draftPollTimer);
+            draftPollTimer = setInterval(async () => {
+              try {
+                const sRes = await fetch('/api/draft/status');
+                if (!sRes.ok) return;
+                const cur = await sRes.json();
+                if (cur.running) {
+                  stageText.innerText = cur.details || `Processing Chapter ${cur.chapter}...`;
+                  const m = Math.floor(cur.elapsed_seconds / 60).toString().padStart(2, '0');
+                  const s = (cur.elapsed_seconds % 60).toString().padStart(2, '0');
+                  timeText.innerText = `${m}:${s}`;
+                } else {
+                  // Job completed in background
+                  clearInterval(draftPollTimer);
+                  draftPollTimer = null;
+                  banner.style.display = 'none';
+                  if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Run Multi-Agent Loop';
+                  }
+                  if (cur.chapter) {
+                    loadChapterDetail(cur.chapter);
+                    loadDiffDetail(cur.chapter);
+                  }
+                  refreshStatus();
+                }
+              } catch (e) {}
+            }, 800);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Save active chapter whenever changed
+    document.getElementById('workbench-chapter-select')?.addEventListener('change', (e) => {
+      localStorage.setItem('aiuthor_active_chapter', e.target.value);
+    });
+
+    // Run on startup
+    initApp();
   </script>
 </body>
 </html>
