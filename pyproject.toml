@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiuthor"
+version = "0.1.0"
+description = "Local Multi-Agent Long-Form Book Authoring Engine"
+authors = [{ name = "Buzz Cobain" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "rich>=13.0"
+]
+
+[project.scripts]
+aiuthor = "aiuthor.cli:main"
+book-foundry = "aiuthor.cli:main"
