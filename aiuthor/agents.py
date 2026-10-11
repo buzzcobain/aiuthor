@@ -54,7 +54,7 @@ class ModelManagerClient:
             pass
         return []
 
-    def generate(self, model: str, prompt: str, system: Optional[str] = None, temperature: float = 0.7) -> str:
+    def generate(self, model: str, prompt: str, system: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 8192) -> str:
         """Generates completion via Model Manager (/v1/chat/completions), with Ollama fallback."""
         messages = []
         if system:
@@ -67,9 +67,10 @@ class ModelManagerClient:
                 payload = {
                     "model": model,
                     "messages": messages,
-                    "temperature": temperature
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
                 }
-                with httpx.Client(timeout=300.0) as client:
+                with httpx.Client(timeout=450.0) as client:
                     resp = client.post(f"{self.manager_url}/v1/chat/completions", json=payload)
                     resp.raise_for_status()
                     data = resp.json()
@@ -86,13 +87,14 @@ class ModelManagerClient:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_ctx": 16384
+                "num_ctx": 16384,
+                "num_predict": max_tokens
             }
         }
         if system:
             payload["system"] = system
 
-        with httpx.Client(timeout=300.0) as client:
+        with httpx.Client(timeout=450.0) as client:
             resp = client.post(f"{self.fallback_ollama}/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -189,42 +191,54 @@ class DraftingAgent:
         self.config = config
 
     def draft_chapter(self, chapter_info: Dict[str, Any], bible: Dict[str, Any], previous_context: str = "") -> str:
-        system_prompt = (
-            "You are an exceptional literary author. You write visceral, grounded, human prose. "
-            "STRICT NEGATIVE CONSTRAINTS (DO NOT VIOLATE):\n"
-            "- NEVER use corporate or trite AI crutches: 'a testament to', 'dance of shadows', 'tapestry', 'palpable', 'delve', 'couldn't help but', 'shivers down spine'.\n"
-            "- AVOID monotonous sentence lengths. Alternate short 3-word punchy clauses with expansive descriptive sentences.\n"
-            "- DO NOT explain emotions with clinical tags ('She felt sad'). Show the physical friction: breathing, silence, posture, concrete objects.\n"
-            "- Make dialogue asymmetric: people interrupt, avoid questions, and speak in fragments rather than delivering complete thesis statements."
-        )
+        target_words = chapter_info.get("target_word_count", 3000)
+        
+        system_prompt = f"""You are a master novelist writing an acclaimed commercial fiction novel. You write visceral, expansive, human prose.
+
+CRITICAL ARCHITECTURE & LENGTH MANDATE:
+- This is a FULL-LENGTH, UNABRIDGED novel chapter. Target length: {target_words} words (minimum 2,500 words).
+- DO NOT summarize or skip ahead. Never fast-forward narrative beats in a single paragraph.
+- Structure this chapter across 2 to 3 fully realized scenes separated by centered scene breaks ('#').
+- Scene 1: Grounded establishing environment, protagonist interiority, current active stakes (~900-1,200 words).
+- Scene 2: The direct interpersonal encounter, unhurried dialogue with subtext, tactical pauses, and the primary turning point (~1,200-1,500 words).
+- Scene 3: The aftermath, private forensic assessment, physical cost/exhaustion, and psychological lingering tension (~600-800 words).
+
+STRICT ANTI-AI NEGATIVE CONSTRAINTS (ZERO TOLERANCE):
+- NEVER use stock AI cliché phrases: 'a testament to', 'dance of shadows', 'tapestry of', 'palpable', 'delve', 'couldn't help but', 'shivers down spine', 'cacophony of', 'symphony of', 'air was thick with', 'hushed tones', 'not just X, but Y'.
+- AVOID rhythmic monotony. Alternate punchy 3-word fragments with long, winding descriptive sentences.
+- PURGE sensory filter words: Avoid 'she felt', 'he noticed', 'she wondered', 'he seemed to'. State the physical reality directly without mental filtering.
+- DIALOGUE RULES: Characters must speak asymmetrically. They interrupt, avoid direct answers, use dry sarcasm or tactical silence, and never deliver expository monologues explaining the theme.
+"""
 
         if bible.get("system_directives"):
             system_prompt += f"\n\nAUTHOR'S OPERATIONAL DIRECTIVES:\n{bible['system_directives']}"
 
         user_prompt = f"""
-CHAPTER TO WRITE:
+CHAPTER SPECIFICATION:
 Chapter {chapter_info.get('chapter_number')}: {chapter_info.get('title')}
 POV: {chapter_info.get('pov_character')}
-Conflict: {chapter_info.get('core_conflict')}
+Target Length: {target_words} words (Minimum 2,500 words across 2-3 scenes)
+Core Conflict: {chapter_info.get('core_conflict')}
 Turning Point: {chapter_info.get('turning_point')}
-Sensory Anchors to Integrate: {', '.join(chapter_info.get('sensory_anchors', []))}
+Sensory Anchors: {', '.join(chapter_info.get('sensory_anchors', []))}
 
-WORLD BIBLE RULES:
-Tone: {bible.get('tone_and_voice', 'Grounded, sharp')}
-Key World Rules: {bible.get('world_rules', [])}
+WORLD BIBLE CONTEXT:
+Tone: {bible.get('tone_and_voice', 'Grounded, sharp, atmospheric')}
+World Rules: {bible.get('world_rules', [])}
 
-PREVIOUS SCENE CONTEXT:
-{previous_context or 'Opening of this narrative arc.'}
+PREVIOUS CONTINUITY CONTEXT:
+{previous_context or 'Opening chapter of the manuscript.'}
 
 TASK:
-Write the complete prose for this chapter. Aim for rich, propulsive narrative depth. 
-Start directly in the action or scene environment. No meta-commentary, no introductions.
+Write the complete, unabridged prose for Chapter {chapter_info.get('chapter_number')}. 
+Develop every beat in full dramatic detail. Start directly in the scene. No meta-commentary, no intro notes, no word count tallies.
 """
         return self.client.generate(
             model=self.config.drafting_model,
             prompt=user_prompt,
             system=system_prompt,
-            temperature=self.config.temperature_drafting
+            temperature=self.config.temperature_drafting,
+            max_tokens=8192
         )
 
 
@@ -289,13 +303,16 @@ class RevisionAgent:
 
     def revise(self, draft: str, critique: str, lint_report: LintReport, bible: Dict[str, Any]) -> str:
         system_prompt = (
-            "You are an expert literary copy-editor and revision specialist. "
-            "Rewrite the manuscript chapter strictly applying the editor's critique and heuristic fixes. "
-            "Purge every single cliché and rhythmic monotony. Produce the final polished prose."
+            "You are an acclaimed senior literary editor and revision specialist. "
+            "Your job is to produce the final, published version of this novel chapter. "
+            "CRITICAL LENGTH DIRECTIVE: Maintain the full narrative depth, expansive scene architecture, and length of the draft (~2,500-3,500 words). "
+            "DO NOT shorten, condense, or summarize the text into a brief sketch. "
+            "Eliminate all flagged clichés, fix melodrama, purge filter words, and enhance asymmetric human dialogue with subtext. "
+            "Return ONLY the finalized prose text. No commentary."
         )
 
         user_prompt = f"""
-ORIGINAL DRAFT:
+ORIGINAL DRAFT (EXPAND AND POLISH WITHOUT CONDENSING):
 \"\"\"
 {draft}
 \"\"\"
@@ -309,15 +326,16 @@ HEURISTIC REMEDIATIONS REQUIRED:
 {'; '.join(lint_report.remediation_prompts)}
 
 TASK:
-Produce the revised, final version of this chapter. 
-- Eliminate all flagged clichés.
-- Fix dialogue so characters speak naturally with subtext.
-- Vary sentence structures sharply.
-- Return ONLY the finalized prose text. No commentary.
+Produce the revised, final, published-length manuscript text for this chapter. 
+- Retain all scenes and narrative beats in full dramatic immersion.
+- Eliminate all stock AI phrases and purple melodrama.
+- Restore natural dialogue rhythms, pauses, and physical friction.
+- Return ONLY the finalized prose.
 """
         return self.client.generate(
             model=self.config.rewriter_model,
             prompt=user_prompt,
             system=system_prompt,
-            temperature=self.config.temperature_rewriter
+            temperature=self.config.temperature_rewriter,
+            max_tokens=8192
         )
