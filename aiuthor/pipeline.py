@@ -242,9 +242,13 @@ class BookProject:
         def on_scene_draft(idx: int, total: int, desc: str):
             notify("drafting", f"Stage 1/5: Scene {idx}/{total} - {desc}")
 
-        raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context, on_scene_callback=on_scene_draft)
-        v1_file.write_text(raw_draft)
-        self.vcs.commit(f"draft(ch{chapter_num:02d}): initial raw generation")
+        if v1_file.exists() and len(v1_file.read_text().split()) >= min_words_required:
+            notify("drafting", f"Stage 1/5: Using freshly synthesized multi-scene draft ({len(v1_file.read_text().split()):,} words)...")
+            raw_draft = v1_file.read_text()
+        else:
+            raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context, on_scene_callback=on_scene_draft)
+            v1_file.write_text(raw_draft)
+            self.vcs.commit(f"draft(ch{chapter_num:02d}): initial raw generation")
 
         # 2. Heuristic Lint
         notify("linting", "Stage 2/5: Heuristic Linter auditing burstiness cadence, paragraph flow & AI clichés...")
