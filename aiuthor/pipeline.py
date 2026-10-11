@@ -239,8 +239,10 @@ class BookProject:
                 notify("regenerating", f"Chapter {chapter_num} failed quality audit: {', '.join(deficits)}. Re-running full multi-agent pipeline...")
 
         # 1. Draft
-        notify("drafting", f"Stage 1/5: Drafter writing initial multi-scene prose with {self.config.drafting_model}...")
-        raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context)
+        def on_scene_draft(idx: int, total: int, desc: str):
+            notify("drafting", f"Stage 1/5: Scene {idx}/{total} - {desc}")
+
+        raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context, on_scene_callback=on_scene_draft)
         v1_file.write_text(raw_draft)
         self.vcs.commit(f"draft(ch{chapter_num:02d}): initial raw generation")
 
@@ -255,21 +257,30 @@ class BookProject:
         review_file.write_text(critique_text)
 
         # 4. Revision Loop (Humanizer pass)
-        notify("rewriting", f"Stage 4/5: Revision Agent ({self.config.rewriter_model}) rewriting prose & purging clichés...")
-        revised_draft = rewriter.revise(raw_draft, critique_text, lint_v1, bible)
+        def on_scene_revise(idx: int, total: int, desc: str):
+            notify("rewriting", f"Stage 4/5: Scene {idx}/{total} - {desc}")
+
+        revised_draft = rewriter.revise(raw_draft, critique_text, lint_v1, bible, on_scene_callback=on_scene_revise)
         final_file.write_text(revised_draft)
 
         # 5. Final Lint
         notify("vcs", "Stage 5/5: Computing final heuristic scores & recording Git commit...")
         lint_v2 = analyze_prose(revised_draft)
 
-        # 6. Quality Check & Automatic Retry if deficient
-        if lint_v2.word_count < min_words_required or lint_v2.human_score < 75.0:
-            notify("retrying", f"Quality gate alert: Draft was {lint_v2.word_count} words (score {lint_v2.human_score}). Re-prompting revision pass with expansion mandate...")
-            expansion_critique = critique_text + f"\n\nCRITICAL RETRY MANDATE: The current draft is only {lint_v2.word_count} words. You must expand each scene to achieve at least {min_words_required} words without summarizing."
-            revised_draft = rewriter.revise(revised_draft, expansion_critique, lint_v2, bible)
-            final_file.write_text(revised_draft)
-            lint_v2 = analyze_prose(revised_draft)
+        # 6. Quality Check & Anti-Compression Safety
+        if lint_v2.word_count < min_words_required:
+            if lint_v1.word_count >= min_words_required:
+                notify("preserving", f"Revision compressed prose to {lint_v2.word_count} words. Preserving rich {lint_v1.word_count}-word multi-scene draft.")
+                revised_draft = raw_draft
+                final_file.write_text(revised_draft)
+                lint_v2 = lint_v1
+            else:
+                notify("retrying", f"Quality alert: Word count ({lint_v2.word_count}) is below minimum {min_words_required}. Re-running multi-scene draft...")
+                raw_draft = drafter.draft_chapter(chapter_info, bible, prev_context, on_scene_callback=on_scene_draft)
+                v1_file.write_text(raw_draft)
+                revised_draft = raw_draft
+                final_file.write_text(revised_draft)
+                lint_v2 = analyze_prose(revised_draft)
 
         # 7. Commit final revision
         commit_hash = self.vcs.commit(

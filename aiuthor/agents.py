@@ -184,62 +184,163 @@ Return ONLY valid JSON matching this schema:
 
 
 class DraftingAgent:
-    """Drafts scene/chapter prose using beat-by-beat grounding and negative anti-AI constraints."""
+    """Drafts scene/chapter prose using progressive multi-scene generation and negative anti-AI constraints."""
 
     def __init__(self, client: ModelManagerClient, config: ModelConfig):
         self.client = client
         self.config = config
 
-    def draft_chapter(self, chapter_info: Dict[str, Any], bible: Dict[str, Any], previous_context: str = "") -> str:
+    def draft_chapter(
+        self,
+        chapter_info: Dict[str, Any],
+        bible: Dict[str, Any],
+        previous_context: str = "",
+        on_scene_callback: Optional[Any] = None
+    ) -> str:
         target_words = chapter_info.get("target_word_count", 3000)
-        
-        system_prompt = f"""You are a master novelist writing an acclaimed commercial fiction novel. You write visceral, expansive, human prose.
+        ch_num = chapter_info.get("chapter_number", 1)
+        title = chapter_info.get("title", f"Chapter {ch_num}")
+        pov = chapter_info.get("pov_character", "Lead")
+        conflict = chapter_info.get("core_conflict", "Direct confrontation")
+        turning_point = chapter_info.get("turning_point", "Crucial escalation")
+        anchors = chapter_info.get("sensory_anchors", [])
+        sensory_text = ", ".join(anchors) if anchors else "Cold brass, guttering flame"
 
-CRITICAL ARCHITECTURE & LENGTH MANDATE:
-- This is a FULL-LENGTH, UNABRIDGED novel chapter. Target length: {target_words} words (minimum 2,500 words).
-- DO NOT summarize or skip ahead. Never fast-forward narrative beats in a single paragraph.
-- Structure this chapter across 2 to 3 fully realized scenes separated by centered scene breaks ('#').
-- Scene 1: Grounded establishing environment, protagonist interiority, current active stakes (~900-1,200 words).
-- Scene 2: The direct interpersonal encounter, unhurried dialogue with subtext, tactical pauses, and the primary turning point (~1,200-1,500 words).
-- Scene 3: The aftermath, private forensic assessment, physical cost/exhaustion, and psychological lingering tension (~600-800 words).
+        # Word budgets for 3 progressive movements
+        w_s1 = max(900, int(target_words * 0.35))
+        w_s2 = max(1200, int(target_words * 0.45))
+        w_s3 = max(700, int(target_words * 0.20))
 
-STRICT ANTI-AI NEGATIVE CONSTRAINTS (ZERO TOLERANCE):
-- NEVER use stock AI cliché phrases: 'a testament to', 'dance of shadows', 'tapestry of', 'palpable', 'delve', 'couldn't help but', 'shivers down spine', 'cacophony of', 'symphony of', 'air was thick with', 'hushed tones', 'not just X, but Y'.
-- AVOID rhythmic monotony. Alternate punchy 3-word fragments with long, winding descriptive sentences.
-- PURGE sensory filter words: Avoid 'she felt', 'he noticed', 'she wondered', 'he seemed to'. State the physical reality directly without mental filtering.
-- DIALOGUE RULES: Characters must speak asymmetrically. They interrupt, avoid direct answers, use dry sarcasm or tactical silence, and never deliver expository monologues explaining the theme.
-"""
+        base_anti_ai = """CRITICAL ANTI-AI WRITING LAWS (STRICT ZERO TOLERANCE):
+- NEVER use stock AI cliché phrases: 'a testament to', 'dance of shadows', 'tapestry of', 'palpable', 'delve', 'couldn't help but', 'shivers down spine', 'cacophony of', 'symphony of', 'air was thick with', 'hushed tones', 'not just X, but Y', 'ironic detachment', 'piercing eyes', 'heart pounded in chest'.
+- AVOID rhythmic monotony: deliberately vary sentence lengths. Alternate punchy 2-4 word fragments with long, winding descriptive sentences.
+- PURGE sensory filter verbs: Avoid 'she felt', 'he noticed', 'she wondered', 'he seemed to', 'she realized'. Deliver physical, visceral reality directly.
+- ASYMMETRIC DIALOGUE: Characters speak with hidden subtext, evasion, dry wit, and tactical silence. They never deliver expository monologues explaining the theme.
+- NO META-COMMENTARY: Output pure manuscript prose only. No chapter headers, no scene labels, no word counts, no 'Here is Scene 1' remarks."""
 
-        if bible.get("system_directives"):
-            system_prompt += f"\n\nAUTHOR'S OPERATIONAL DIRECTIVES:\n{bible['system_directives']}"
+        author_directives = bible.get("system_directives", "")
+        tone_voice = bible.get("tone_and_voice", "Sharp, grounded, low sentimentality, visceral.")
+        world_rules = bible.get("world_rules", [])
 
-        user_prompt = f"""
-CHAPTER SPECIFICATION:
-Chapter {chapter_info.get('chapter_number')}: {chapter_info.get('title')}
-POV: {chapter_info.get('pov_character')}
-Target Length: {target_words} words (Minimum 2,500 words across 2-3 scenes)
-Core Conflict: {chapter_info.get('core_conflict')}
-Turning Point: {chapter_info.get('turning_point')}
-Sensory Anchors: {', '.join(chapter_info.get('sensory_anchors', []))}
+        # -------------------------------------------------------------
+        # SCENE 1: Grounded Establishment, Internal Stakes, Somatic Strain
+        # -------------------------------------------------------------
+        if on_scene_callback:
+            on_scene_callback(1, 3, "Drafting Scene 1: Setting arena, institutional stakes & interiority...")
 
-WORLD BIBLE CONTEXT:
-Tone: {bible.get('tone_and_voice', 'Grounded, sharp, atmospheric')}
-World Rules: {bible.get('world_rules', [])}
+        s1_sys = f"""You are a master novelist writing an acclaimed commercial fiction novel. You write expansive, visceral, human prose.
+{base_anti_ai}
+Tone & Style: {tone_voice}
+World Constraints: {world_rules}
+{f'Operational Directives:\n{author_directives}' if author_directives else ''}
 
-PREVIOUS CONTINUITY CONTEXT:
-{previous_context or 'Opening chapter of the manuscript.'}
+SCENE 1 MANDATE:
+- Target length: {w_s1} words (minimum {int(w_s1 * 0.85)} words).
+- Focus: Ground the physical arena, establish the ruthless institutional/corporate environment, the POV character's interiority, physical strain/somatic symptoms, and sensory grounding.
+- Do NOT rush ahead to the climax or encounter yet. Build the physical space, tactile texture, and psychological friction with deep dramatic patience."""
+
+        s1_user = f"""CHAPTER BLUEPRINT:
+Chapter {ch_num}: {title}
+POV: {pov}
+Setting & Context: {previous_context or 'Opening movement of the manuscript.'}
+Initial Conflict: {conflict}
+Sensory Anchors: {sensory_text}
 
 TASK:
-Write the complete, unabridged prose for Chapter {chapter_info.get('chapter_number')}. 
-Develop every beat in full dramatic detail. Start directly in the scene. No meta-commentary, no intro notes, no word count tallies.
-"""
-        return self.client.generate(
+Write Scene 1 ({w_s1} words). Start directly in the scene with physical action, sensory weight, and immediate corporate/personal stakes. Return ONLY raw prose."""
+
+        scene_1 = self.client.generate(
             model=self.config.drafting_model,
-            prompt=user_prompt,
-            system=system_prompt,
+            prompt=s1_user,
+            system=s1_sys,
             temperature=self.config.temperature_drafting,
-            max_tokens=8192
-        )
+            max_tokens=4096
+        ).strip()
+
+        # -------------------------------------------------------------
+        # SCENE 2: The Interpersonal Crucible, Subtext, The Archaic Omen
+        # -------------------------------------------------------------
+        if on_scene_callback:
+            on_scene_callback(2, 3, "Drafting Scene 2: Interpersonal crucible, asymmetric dialogue & omen...")
+
+        s1_tail = "\n".join(scene_1.splitlines()[-15:]) if len(scene_1.splitlines()) > 15 else scene_1
+
+        s2_sys = f"""You are a master novelist writing an acclaimed commercial fiction novel. You write expansive, visceral, human prose.
+{base_anti_ai}
+Tone & Style: {tone_voice}
+World Constraints: {world_rules}
+{f'Operational Directives:\n{author_directives}' if author_directives else ''}
+
+SCENE 2 MANDATE:
+- Target length: {w_s2} words (minimum {int(w_s2 * 0.85)} words).
+- Focus: The direct interpersonal encounter. Sharp conversational sparring layered with unspoken subtext, tactical silences, and the core turning point ({turning_point}).
+- Integrate the subtle archaic omen / physical anomaly ({sensory_text}) naturally into the luxury setting without characters breaking composure.
+- Do NOT jump ahead to the aftermath. Maintain high moment-to-moment tension throughout."""
+
+        s2_user = f"""CONTINUATION CONTEXT (Tail of Scene 1):
+\"\"\"
+{s1_tail}
+\"\"\"
+
+CHAPTER CORE TURNING POINT:
+{turning_point}
+SENSORY OMEN / ANCHORS:
+{sensory_text}
+
+TASK:
+Continue immediately from Scene 1 to write Scene 2 ({w_s2} words). Unfold the interaction with unhurried dramatic tension. Return ONLY raw prose."""
+
+        scene_2 = self.client.generate(
+            model=self.config.drafting_model,
+            prompt=s2_user,
+            system=s2_sys,
+            temperature=self.config.temperature_drafting,
+            max_tokens=4096
+        ).strip()
+
+        # -------------------------------------------------------------
+        # SCENE 3: Solitary Forensic Aftermath & Lingering Dread Hook
+        # -------------------------------------------------------------
+        if on_scene_callback:
+            on_scene_callback(3, 3, "Drafting Scene 3: Forensic aftermath, due diligence audit & lingering hook...")
+
+        s2_tail = "\n".join(scene_2.splitlines()[-15:]) if len(scene_2.splitlines()) > 15 else scene_2
+
+        s3_sys = f"""You are a master novelist writing an acclaimed commercial fiction novel. You write expansive, visceral, human prose.
+{base_anti_ai}
+Tone & Style: {tone_voice}
+World Constraints: {world_rules}
+{f'Operational Directives:\n{author_directives}' if author_directives else ''}
+
+SCENE 3 MANDATE:
+- Target length: {w_s3} words (minimum {int(w_s3 * 0.85)} words).
+- Focus: The solitary aftermath. The POV character ({pov}) alone, conducting a forensic audit of the encounter like a cold corporate inquiry, confronting somatic exhaustion vs. intellectual arrogance.
+- Close on an unresolved sensory anomaly and lingering psychological dread that hooks into the next chapter."""
+
+        s3_user = f"""CONTINUATION CONTEXT (Tail of Scene 2):
+\"\"\"
+{s2_tail}
+\"\"\"
+
+TASK:
+Write Scene 3 ({w_s3} words). The solitary aftermath, forensic calculation, and unresolved hook. Return ONLY raw prose."""
+
+        scene_3 = self.client.generate(
+            model=self.config.drafting_model,
+            prompt=s3_user,
+            system=s3_sys,
+            temperature=self.config.temperature_drafting,
+            max_tokens=4096
+        ).strip()
+
+        # Clean any accidental duplicate headers or markdown artifacts
+        def clean_prose(text: str) -> str:
+            text = re.sub(r'^#+\s+.*$', '', text, flags=re.MULTILINE)
+            text = re.sub(r'^(Scene\s+\d+|Act\s+[I|V|X]+).*$', '', text, flags=re.IGNORECASE | re.MULTILINE)
+            return text.strip()
+
+        scenes = [clean_prose(scene_1), clean_prose(scene_2), clean_prose(scene_3)]
+        return "\n\n#\n\n".join(s for s in scenes if s)
 
 
 class CriticAgent:
@@ -254,7 +355,7 @@ class CriticAgent:
             "You are a brutally honest, senior literary editor. "
             "Your job is to identify every place where the text sounds like an artificial intelligence wrote it: "
             "on-the-nose dialogue, melodrama, flat sentence cadence, unearned emotional climaxes, and purple prose. "
-            "Provide crisp, bulleted, actionable revision directives."
+            "Provide crisp, bulleted, actionable revision directives for each scene."
         )
 
         author_rules = chapter_info.get("system_directives", "")
@@ -264,7 +365,8 @@ class CriticAgent:
         lint_summary = (
             f"Heuristic Lint Score: {lint_report.human_score}/100\n"
             f"Burstiness CV: {lint_report.burstiness_cv} (Target >= 0.45)\n"
-            f"Detected Cliché Markers: {len(lint_report.cliches_found)}\n"
+            f"Detected Cliché Markers: {len(lint_report.cliches_found)} ({', '.join(lint_report.cliches_found) if lint_report.cliches_found else 'None'})\n"
+            f"Paragraph Flow Score: {lint_report.paragraph_flow_score}/100\n"
             f"Issues: {'; '.join(lint_report.issues)}"
         )
 
@@ -277,20 +379,21 @@ HEURISTIC LINTER AUDIT:
 
 DRAFT PROSE TO REVIEW:
 \"\"\"
-{draft[:4000]}  [truncated for length if needed]
+{draft[:24000]}
 \"\"\"
 
 CRITIQUE INSTRUCTIONS:
-1. Point out any dialogue that feels like an 'informational lecture' rather than real human interaction.
+1. Point out any dialogue that feels like an 'informational lecture' or lacks subtext.
 2. Identify any unearned melodramatic moments or purple adjectives.
 3. List 3 to 5 EXACT lines that must be rewritten or cut.
-4. Provide concrete instructions for the Revision Agent on how to restore authentic human cadence and sensory grit.
+4. Give specific scene-by-scene notes on how to preserve full length while sharpening human friction.
 """
         return self.client.generate(
             model=self.config.critic_model,
             prompt=user_prompt,
             system=system_prompt,
-            temperature=self.config.temperature_critic
+            temperature=self.config.temperature_critic,
+            max_tokens=4096
         )
 
 
@@ -301,41 +404,67 @@ class RevisionAgent:
         self.client = client
         self.config = config
 
-    def revise(self, draft: str, critique: str, lint_report: LintReport, bible: Dict[str, Any]) -> str:
+    def revise_scene(self, scene_text: str, scene_index: int, total_scenes: int, critique: str, lint_report: LintReport, bible: Dict[str, Any]) -> str:
+        word_count = len(scene_text.split())
+        target_min_words = int(word_count * 0.85)
+
         system_prompt = (
             "You are an acclaimed senior literary editor and revision specialist. "
-            "Your job is to produce the final, published version of this novel chapter. "
-            "CRITICAL LENGTH DIRECTIVE: Maintain the full narrative depth, expansive scene architecture, and length of the draft (~2,500-3,500 words). "
+            "Your job is to polish and humanize this scene for publication. "
+            f"CRITICAL LENGTH DIRECTIVE: Maintain the full narrative depth and expansive length of the scene (target: {word_count} words, minimum {target_min_words} words). "
             "DO NOT shorten, condense, or summarize the text into a brief sketch. "
             "Eliminate all flagged clichés, fix melodrama, purge filter words, and enhance asymmetric human dialogue with subtext. "
-            "Return ONLY the finalized prose text. No commentary."
+            "Return ONLY the finalized prose text. No commentary, no scene labels."
         )
 
+        remediations = "; ".join(lint_report.remediation_prompts) if lint_report.remediation_prompts else "Preserve cadence variance and subtext."
         user_prompt = f"""
-ORIGINAL DRAFT (EXPAND AND POLISH WITHOUT CONDENSING):
+SCENE {scene_index} of {total_scenes} TO POLISH (Target length: {word_count} words, minimum {target_min_words} words):
 \"\"\"
-{draft}
+{scene_text}
 \"\"\"
 
-EDITOR'S CRITIQUE:
+EDITOR'S REVISION DIRECTIVES:
 \"\"\"
 {critique}
 \"\"\"
 
-HEURISTIC REMEDIATIONS REQUIRED:
-{'; '.join(lint_report.remediation_prompts)}
+HEURISTIC REMEDIATIONS:
+{remediations}
 
 TASK:
-Produce the revised, final, published-length manuscript text for this chapter. 
-- Retain all scenes and narrative beats in full dramatic immersion.
+Produce the revised, polished manuscript text for this scene.
+- Retain every dramatic beat, interaction, and physical detail in full immersion.
+- Maintain full expansive scene length (minimum {target_min_words} words).
 - Eliminate all stock AI phrases and purple melodrama.
-- Restore natural dialogue rhythms, pauses, and physical friction.
-- Return ONLY the finalized prose.
+- Return ONLY the finalized scene prose.
 """
-        return self.client.generate(
+        revised = self.client.generate(
             model=self.config.rewriter_model,
             prompt=user_prompt,
             system=system_prompt,
             temperature=self.config.temperature_rewriter,
-            max_tokens=8192
-        )
+            max_tokens=4096
+        ).strip()
+
+        # Anti-compression guard: if model condensed scene by more than 20%, keep original scene
+        rev_words = len(revised.split())
+        if rev_words < target_min_words:
+            # Model compressed excessively; fallback to original scene
+            return scene_text
+        return revised
+
+    def revise(self, draft: str, critique: str, lint_report: LintReport, bible: Dict[str, Any], on_scene_callback: Optional[Any] = None) -> str:
+        scenes = re.split(r'\n\s*#\s*\n', draft)
+        if len(scenes) >= 2:
+            revised_scenes = []
+            for i, scene in enumerate(scenes, 1):
+                if on_scene_callback:
+                    on_scene_callback(i, len(scenes), f"Polishing Scene {i}/{len(scenes)}...")
+                revised_scene = self.revise_scene(scene.strip(), i, len(scenes), critique, lint_report, bible)
+                revised_scenes.append(revised_scene)
+            return "\n\n#\n\n".join(revised_scenes)
+        else:
+            # Single scene fallback
+            return self.revise_scene(draft.strip(), 1, 1, critique, lint_report, bible)
+
