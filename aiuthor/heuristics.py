@@ -9,6 +9,7 @@ Analyzes text for predictable LLM prose failure modes:
 
 import math
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple
 
@@ -70,6 +71,11 @@ class LintReport:
     flow_feedback: List[Dict[str, Any]] = field(default_factory=list)
     monotonous_paragraphs: int = 0
     repetitive_paragraph_openers: int = 0
+    # Lexical Diversity & Ghostbuster Forensic Metrics
+    type_token_ratio: float = 0.0
+    hapax_ratio: float = 0.0
+    duplicate_sentences_count: int = 0
+    somatic_tics_count: int = 0
 
 
 def split_sentences(text: str) -> List[str]:
@@ -251,8 +257,63 @@ def analyze_prose(text: str) -> LintReport:
         para_flow_score -= min(20.0, (monotonous_paras * 5.0))
         para_flow_score = max(20.0, min(100.0, para_flow_score))
 
+    # 5. Duplicate Sentence Detection
+    clean_s_list = [s.strip().lower() for s in sentences if len(s.strip().split()) >= 6]
+    s_counts = Counter(clean_s_list)
+    dup_sentences = {s: c for s, c in s_counts.items() if c > 1}
+    duplicate_sentences_count = sum(c - 1 for c in dup_sentences.values())
+
+    # 6. Lexical Diversity & Hapax Legomena (Ghostbuster features)
+    clean_words = [w.lower() for w in re.findall(r'\b[a-zA-Z]{3,}\b', text)]
+    total_clean_words = len(clean_words)
+    if total_clean_words > 0:
+        word_freq = Counter(clean_words)
+        unique_words = len(word_freq)
+        ttr = unique_words / total_clean_words
+        hapax_words = [w for w, c in word_freq.items() if c == 1]
+        hapax_ratio = len(hapax_words) / total_clean_words
+    else:
+        ttr = 0.0
+        hapax_ratio = 0.0
+
+    # 7. Somatic / Tension Clichés
+    SOMATIC_PATTERNS = [
+        (r'\b(?:her\s+)?mind\s+racing\b', "mind racing"),
+        (r'\bforced\s+a\s+smile\b', "forced a smile"),
+        (r'\bpulse\s+quicken(?:ed|ing)?\b', "pulse quickened"),
+        (r'\bswallowed\s+hard\b', "swallowed hard"),
+        (r'\beyes\s+narrow(?:ed|ing)?\b', "eyes narrowed"),
+        (r'\bheart\s+(?:pounded|skipped\s+a\s+beat)\b', "heart pounded"),
+        (r'\bsomething\s+was\s+wrong\b', "something was wrong"),
+    ]
+    somatic_tics_count = 0
+    for pat, label in SOMATIC_PATTERNS:
+        matches = len(re.findall(pat, text, re.IGNORECASE))
+        if matches >= 3:
+            somatic_tics_count += matches - 2
+            issues.append(f"Repetitive narrative tic: '{label}' appears {matches} times (max allowed: 2).")
+            remediations.append(f"Purge repeated instances of '{label}'. Substitute with stillness, direct dialogue, or tangible environmental action.")
+
+    if duplicate_sentences_count > 0:
+        dup_penalty = min(35.0, duplicate_sentences_count * 8.0)
+        score -= dup_penalty
+        issues.append(f"Severe verbatim sentence recycling: {duplicate_sentences_count} duplicate sentences detected.")
+        remediations.append("Deduplicate text: purge all echoed or repeated sentences across scene transitions.")
+
+    if total_words >= 1500:
+        if ttr < 0.22:
+            ttr_penalty = min(20.0, (0.22 - ttr) * 150.0)
+            score -= ttr_penalty
+            issues.append(f"Constrained lexical dispersion (TTR: {ttr:.3f}, target >= 0.26). Text recycles high-frequency tokens.")
+            remediations.append("Expand vocabulary: replace repetitive somatic phrases ('mind racing', 'forced a smile') with fresh physical and environmental action.")
+        if hapax_ratio < 0.10:
+            hapax_penalty = min(15.0, (0.10 - hapax_ratio) * 120.0)
+            score -= hapax_penalty
+            issues.append(f"Low rare-token density (Hapax ratio: {hapax_ratio:.3f}, target >= 0.12). Characteristic of temperature-sampled LLM generation.")
+            remediations.append("Increase lexical entropy: introduce unique sensory, technical, and domain-grounded nouns.")
+
     score = max(0.0, min(100.0, score))
-    passed = score >= 75.0 and len(cliches_found) <= 1
+    passed = score >= 75.0 and len(cliches_found) <= 1 and duplicate_sentences_count == 0
 
     return LintReport(
         word_count=total_words,
@@ -273,5 +334,9 @@ def analyze_prose(text: str) -> LintReport:
         paragraph_flow_score=round(para_flow_score, 1),
         flow_feedback=flow_feedback,
         monotonous_paragraphs=monotonous_paras,
-        repetitive_paragraph_openers=repetitive_para_openers
+        repetitive_paragraph_openers=repetitive_para_openers,
+        type_token_ratio=round(ttr, 3),
+        hapax_ratio=round(hapax_ratio, 3),
+        duplicate_sentences_count=duplicate_sentences_count,
+        somatic_tics_count=somatic_tics_count
     )

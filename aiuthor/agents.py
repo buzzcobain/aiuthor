@@ -213,6 +213,12 @@ class DraftingAgent:
 
         base_anti_ai = """CRITICAL ANTI-AI WRITING LAWS (STRICT ZERO TOLERANCE):
 - NEVER use stock AI cliché phrases: 'a testament to', 'dance of shadows', 'tapestry of', 'palpable', 'delve', 'couldn't help but', 'shivers down spine', 'cacophony of', 'symphony of', 'air was thick with', 'hushed tones', 'not just X, but Y', 'ironic detachment', 'piercing eyes', 'heart pounded in chest'.
+- BANNED SOMATIC TIC REPETITIONS (STRICT ZERO TOLERANCE):
+  Never repeat character internal panic tropes or facial gestures:
+  * Do NOT repeat 'mind racing', 'forced a smile', 'pulse quickened', 'eyes narrowed', 'swallowed hard', 'heart pounded', 'something was wrong'. Maximum 1 occurrence across the entire chapter.
+  * Ground psychological tension in external physical friction, risk assessment, tactile textures, or unyielding stillness rather than generic nervous tells.
+- EXPAND LEXICAL DIVERSITY & VOCABULARY:
+  Use varied, tactile domain nouns (private equity covenants, debt facilities, forensic accounting, cold limestone, brass alloys, aged vintage oxidation) instead of repeating placeholder words ('something', 'unsettling', 'anomalies', 'shadows').
 - AVOID rhythmic monotony: deliberately vary sentence lengths. Alternate punchy 2-4 word fragments with long, winding descriptive sentences.
 - PURGE sensory filter verbs: Avoid 'she felt', 'he noticed', 'she wondered', 'he seemed to', 'she realized'. Deliver physical, visceral reality directly.
 - ASYMMETRIC DIALOGUE: Characters speak with hidden subtext, evasion, dry wit, and tactical silence. They never deliver expository monologues explaining the theme.
@@ -333,14 +339,38 @@ Write Scene 3 ({w_s3} words). The solitary aftermath, forensic calculation, and 
             max_tokens=4096
         ).strip()
 
-        # Clean any accidental duplicate headers or markdown artifacts
+        # Clean any accidental duplicate headers or markdown artifacts and deduplicate echoed blocks
         def clean_prose(text: str) -> str:
             text = re.sub(r'^#+\s+.*$', '', text, flags=re.MULTILINE)
             text = re.sub(r'^(Scene\s+\d+|Act\s+[I|V|X]+).*$', '', text, flags=re.IGNORECASE | re.MULTILINE)
-            return text.strip()
+            paras = text.split("\n\n")
+            seen = set()
+            unique_paras = []
+            for p in paras:
+                p_strip = p.strip()
+                if not p_strip:
+                    continue
+                if p_strip in seen and p_strip != "#":
+                    continue
+                seen.add(p_strip)
+                unique_paras.append(p_strip)
+            return "\n\n".join(unique_paras).strip()
 
-        scenes = [clean_prose(scene_1), clean_prose(scene_2), clean_prose(scene_3)]
-        return "\n\n#\n\n".join(s for s in scenes if s)
+        # Global deduplication across scene boundaries to eliminate echoed transitions
+        seen_all_paras = set()
+        deduped_scenes = []
+        for raw_scene in [clean_prose(scene_1), clean_prose(scene_2), clean_prose(scene_3)]:
+            if not raw_scene:
+                continue
+            scene_paras = []
+            for p in raw_scene.split("\n\n"):
+                p_clean = p.strip()
+                if p_clean and (p_clean not in seen_all_paras or p_clean == "#"):
+                    seen_all_paras.add(p_clean)
+                    scene_paras.append(p_clean)
+            deduped_scenes.append("\n\n".join(scene_paras))
+
+        return "\n\n#\n\n".join(s for s in deduped_scenes if s)
 
 
 class CriticAgent:
@@ -384,10 +414,11 @@ DRAFT PROSE TO REVIEW:
 \"\"\"
 
 CRITIQUE INSTRUCTIONS:
-1. Point out any dialogue that feels like an 'informational lecture' or lacks subtext.
-2. Identify any unearned melodramatic moments or purple adjectives.
-3. List 3 to 5 EXACT lines that must be rewritten or cut.
-4. Give specific scene-by-scene notes on how to preserve full length while sharpening human friction.
+1. Identify and list every verbatim duplicate sentence, repeated paragraph, or circular loop that appears across scenes.
+2. Flag all repetitive somatic tics (e.g. repeated instances of 'forced a smile', 'mind racing', 'pulse quickened', 'eyes narrowed').
+3. Point out where vocabulary is constrained or generic ('something was wrong', 'unsettling', 'anomalies') and recommend precise domain terminology.
+4. List 3 to 5 EXACT lines that must be rewritten or cut.
+5. Give crisp directives for the Revision Agent on preserving full length while maximizing lexical entropy.
 """
         return self.client.generate(
             model=self.config.critic_model,
@@ -413,8 +444,10 @@ class RevisionAgent:
             "You are an acclaimed senior literary editor and revision specialist. "
             "Your job is to polish and humanize this scene for publication. "
             f"CRITICAL LENGTH DIRECTIVE: Maintain the full narrative depth and expansive length of the scene (target: {word_count} words, minimum {target_min_words} words). "
-            "DO NOT shorten, condense, or summarize the text into a brief sketch. "
-            "Eliminate all flagged clichés, fix melodrama, purge filter words, and enhance asymmetric human dialogue with subtext. "
+            "STRICT DEDUPLICATION & SOMATIC TIC PURGE: "
+            "1. Purge all repeated sentences and looped paragraphs. Every sentence must introduce fresh, unrepeated progression. "
+            "2. Never repeat stock somatic reactions: purge repeated instances of 'forced a smile', 'mind racing', 'pulse quickened', 'eyes narrowed'. Replace with stillness, tactile resistance, or direct dialogue. "
+            "3. Expand lexical diversity: replace safe generic placeholders with rich, precise domain-grounded nouns. "
             "Return ONLY the finalized prose text. No commentary, no scene labels."
         )
 
@@ -436,8 +469,8 @@ HEURISTIC REMEDIATIONS:
 TASK:
 Produce the revised, polished manuscript text for this scene.
 - Retain every dramatic beat, interaction, and physical detail in full immersion.
+- Eliminate all verbatim sentence loops, repeated paragraphs, and stock somatic tics.
 - Maintain full expansive scene length (minimum {target_min_words} words).
-- Eliminate all stock AI phrases and purple melodrama.
 - Return ONLY the finalized scene prose.
 """
         revised = self.client.generate(
@@ -459,11 +492,21 @@ Produce the revised, polished manuscript text for this scene.
         scenes = re.split(r'\n\s*#\s*\n', draft)
         if len(scenes) >= 2:
             revised_scenes = []
+            seen_paras = set()
             for i, scene in enumerate(scenes, 1):
                 if on_scene_callback:
                     on_scene_callback(i, len(scenes), f"Polishing Scene {i}/{len(scenes)}...")
                 revised_scene = self.revise_scene(scene.strip(), i, len(scenes), critique, lint_report, bible)
-                revised_scenes.append(revised_scene)
+                
+                # Deduplicate paragraphs across scene output
+                deduped_paras = []
+                for p in revised_scene.split("\n\n"):
+                    p_clean = p.strip()
+                    if p_clean and (p_clean not in seen_paras or p_clean == "#"):
+                        seen_paras.add(p_clean)
+                        deduped_paras.append(p_clean)
+                revised_scenes.append("\n\n".join(deduped_paras))
+
             return "\n\n#\n\n".join(revised_scenes)
         else:
             # Single scene fallback

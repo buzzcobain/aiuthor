@@ -24,6 +24,22 @@ from .agents import (
 )
 
 
+def deduplicate_prose(text: str) -> str:
+    """Removes echoed duplicate paragraphs and loops across scenes."""
+    paras = text.split("\n\n")
+    seen = set()
+    cleaned = []
+    for p in paras:
+        p_clean = p.strip()
+        if not p_clean:
+            continue
+        if p_clean in seen and p_clean != "#":
+            continue
+        seen.add(p_clean)
+        cleaned.append(p_clean)
+    return "\n\n".join(cleaned)
+
+
 class BookProject:
     """Manages the on-disk state, version control, and multi-agent workflows of a book."""
 
@@ -202,15 +218,17 @@ class BookProject:
             existing_text = final_file.read_text().strip()
             existing_lint = analyze_prose(existing_text)
             
-            # Check if existing meets all quality gates (word count, human score, flow, zero cliches)
+            # Check if existing meets all quality gates (word count, human score, flow, zero cliches, no duplicate sentences, healthy TTR)
             meets_word_count = existing_lint.word_count >= min_words_required
             meets_human_score = existing_lint.human_score >= 80.0
             meets_flow = existing_lint.paragraph_flow_score >= 80.0
             meets_cliches = len(existing_lint.cliches_found) == 0
+            meets_duplicates = existing_lint.duplicate_sentences_count == 0
+            meets_ttr = existing_lint.type_token_ratio >= 0.22
 
-            notify("evaluating", f"Evaluating existing Chapter {chapter_num} against new quality rules ({existing_lint.word_count} words, score {existing_lint.human_score})...")
+            notify("evaluating", f"Evaluating existing Chapter {chapter_num} against new quality rules ({existing_lint.word_count} words, score {existing_lint.human_score}, TTR {existing_lint.type_token_ratio})...")
 
-            if meets_word_count and meets_human_score and meets_flow and meets_cliches:
+            if meets_word_count and meets_human_score and meets_flow and meets_cliches and meets_duplicates and meets_ttr:
                 notify("complete", f"✓ Chapter {chapter_num} already meets all rules ({existing_lint.word_count:,} words, score {existing_lint.human_score}). Skipping re-draft.")
                 return {
                     "chapter_number": chapter_num,
@@ -236,6 +254,10 @@ class BookProject:
                     deficits.append(f"paragraph flow issues ({existing_lint.paragraph_flow_score} < 80.0)")
                 if not meets_cliches:
                     deficits.append(f"{len(existing_lint.cliches_found)} AI cliché markers detected")
+                if not meets_duplicates:
+                    deficits.append(f"{existing_lint.duplicate_sentences_count} duplicate sentences detected")
+                if not meets_ttr:
+                    deficits.append(f"low lexical diversity (TTR {existing_lint.type_token_ratio} < 0.22)")
                 notify("regenerating", f"Chapter {chapter_num} failed quality audit: {', '.join(deficits)}. Re-running full multi-agent pipeline...")
 
         # 1. Draft
@@ -265,6 +287,7 @@ class BookProject:
             notify("rewriting", f"Stage 4/5: Scene {idx}/{total} - {desc}")
 
         revised_draft = rewriter.revise(raw_draft, critique_text, lint_v1, bible, on_scene_callback=on_scene_revise)
+        revised_draft = deduplicate_prose(revised_draft)
         final_file.write_text(revised_draft)
 
         # 5. Final Lint
