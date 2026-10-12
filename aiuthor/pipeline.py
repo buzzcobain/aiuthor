@@ -9,6 +9,7 @@ Coordinates:
 
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+import re
 import yaml
 
 from .config import ModelConfig, get_model_config
@@ -25,19 +26,35 @@ from .agents import (
 
 
 def deduplicate_prose(text: str) -> str:
-    """Removes echoed duplicate paragraphs and loops across scenes."""
-    paras = text.split("\n\n")
-    seen = set()
-    cleaned = []
-    for p in paras:
-        p_clean = p.strip()
-        if not p_clean:
-            continue
-        if p_clean in seen and p_clean != "#":
-            continue
-        seen.add(p_clean)
-        cleaned.append(p_clean)
-    return "\n\n".join(cleaned)
+    """Removes echoed duplicate paragraphs and duplicate sentences across and within scenes."""
+    scenes = re.split(r'\n\s*#\s*\n', text)
+    seen_sentences = set()
+    cleaned_scenes = []
+
+    for sc in scenes:
+        paras = sc.split("\n\n")
+        cleaned_paras = []
+        for p in paras:
+            p_strip = p.strip()
+            if not p_strip:
+                continue
+            # Split into sentences preserving punctuation
+            sents = re.findall(r'[^.!?]+[.!?]?', p_strip)
+            clean_sents = []
+            for s in sents:
+                s_core = re.sub(r'[^a-zA-Z0-9]+', ' ', s.lower()).strip()
+                if len(s_core.split()) > 3:
+                    if s_core in seen_sentences:
+                        continue
+                    seen_sentences.add(s_core)
+                clean_sents.append(s.strip())
+            if clean_sents:
+                rebuilt = " ".join(clean_sents).strip()
+                if len(rebuilt) > 10:
+                    cleaned_paras.append(rebuilt)
+        cleaned_scenes.append("\n\n".join(cleaned_paras))
+
+    return "\n\n#\n\n".join(cleaned_scenes)
 
 
 class BookProject:
